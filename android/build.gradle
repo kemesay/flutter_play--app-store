@@ -1,0 +1,53 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    
+    // Workaround for jlink issue with Android SDK 35
+    tasks.withType(JavaCompile) {
+        options.compilerArgs += ['-Xlint:-options']
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+    
+    // Configure namespace for plugins that don't have it set
+    // Read package from AndroidManifest.xml using a simpler approach
+    def namespaceValue = null
+    def manifestFile = project.file("src/main/AndroidManifest.xml")
+    if (manifestFile.exists()) {
+        try {
+            // Use simple text parsing instead of XmlSlurper
+            def manifestText = manifestFile.text
+            def packageMatch = manifestText =~ /package="([^"]+)"/
+            if (packageMatch) {
+                namespaceValue = packageMatch[0][1]
+            }
+        } catch (Exception e) {
+            // Ignore parsing errors
+            println "Warning: Could not parse AndroidManifest.xml for project ${project.name}: ${e.message}"
+        }
+    }
+    if (!namespaceValue) {
+        namespaceValue = "io.flutter.plugins.${project.name}"
+    }
+    
+    // Configure namespace using plugins.withId which is safer
+    project.plugins.withId("com.android.library") {
+        project.android {
+            if (namespace == null || namespace.isEmpty()) {
+                namespace = namespaceValue
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
