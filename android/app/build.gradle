@@ -14,7 +14,8 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.odatransportation.app"
     compileSdk = 35
-    ndkVersion = "25.1.8937393"
+    // Removed explicit NDK version - will use default or installed NDK
+    // ndkVersion = "25.1.8937393"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -47,13 +48,26 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.release
-            ndk {
-                debugSymbolLevel = 'FULL'
-            }
+            // Disabled debug symbol stripping due to incomplete NDK installation
+            // ndk {
+            //     debugSymbolLevel = 'FULL'
+            // }
         }
+    }
+    
+    packagingOptions {
+        // Prevent stripping of debug symbols when NDK toolchain is incomplete
+        doNotStrip '**/*.so'
     }
 }
 
 flutter {
     source = "../.."
+}
+
+// Disable stripDebugSymbols task due to incomplete NDK installation
+afterEvaluate {
+    tasks.matching { it.name.contains("stripDebugSymbols") }.configureEach {
+        enabled = false
+    }
 }

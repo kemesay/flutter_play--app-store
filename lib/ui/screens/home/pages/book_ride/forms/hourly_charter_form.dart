@@ -270,8 +270,8 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             items: List.generate(
               12,
               (index) => DropdownMenuItem<int>(
-                value: index + 2,
-                child: Text('${index + 2} hours'),
+                value: index + 4,
+                child: Text('${index + 4} hours'),
               ),
             ),
             onChanged: (value) {
