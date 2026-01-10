@@ -62,7 +62,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SupportProvider()),
       ],
       child: MaterialApp(
-        title: 'ODA Transportation',
+        title: 'ODA Black Car Service',
         debugShowCheckedModeBanner: false,
         theme: theme,
         home: const _AppEntryPoint(),

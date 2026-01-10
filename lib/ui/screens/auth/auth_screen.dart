@@ -223,6 +223,12 @@ class _LoginFormState extends State<_LoginForm> {
                         ),
                       ),
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [
+                        AutofillHints.email,
+                        AutofillHints.username
+                      ],
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Please enter your email or phone number';
@@ -259,6 +265,13 @@ class _LoginFormState extends State<_LoginForm> {
                           borderSide: BorderSide.none,
                         ),
                       ),
+                      keyboardType: TextInputType.visiblePassword,
+                      textInputAction: TextInputAction.done,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.password],
+                      onFieldSubmitted: (_) {
+                        // Handle form submission if needed
+                      },
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your password';
@@ -382,6 +395,9 @@ class _RegisterFormState extends State<_RegisterForm> {
                           borderSide: BorderSide.none,
                         ),
                       ),
+                      textInputAction: TextInputAction.next,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.name],
                       validator: (value) {
                         if (value == null || value.trim().length < 2) {
                           return 'Please enter your full name';
@@ -406,6 +422,9 @@ class _RegisterFormState extends State<_RegisterForm> {
                         ),
                       ),
                       keyboardType: TextInputType.emailAddress,
+                      textInputAction: TextInputAction.next,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.email],
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please provide an email address';
@@ -435,6 +454,9 @@ class _RegisterFormState extends State<_RegisterForm> {
                         ),
                       ),
                       keyboardType: TextInputType.phone,
+                      textInputAction: TextInputAction.next,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.telephoneNumber],
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Phone number is required';
@@ -464,7 +486,20 @@ class _RegisterFormState extends State<_RegisterForm> {
                                 : Icons.visibility_off_outlined,
                           ),
                         ),
+                        filled: true,
+                        fillColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceVariant
+                            .withOpacity(0.3),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
+                      keyboardType: TextInputType.visiblePassword,
+                      textInputAction: TextInputAction.next,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.newPassword],
                       validator: (value) {
                         if (value == null || value.length < 8) {
                           return 'Password must be at least 8 characters';
@@ -502,6 +537,13 @@ class _RegisterFormState extends State<_RegisterForm> {
                           borderSide: BorderSide.none,
                         ),
                       ),
+                      keyboardType: TextInputType.visiblePassword,
+                      textInputAction: TextInputAction.done,
+                      enableInteractiveSelection: true,
+                      autofillHints: const [AutofillHints.newPassword],
+                      onFieldSubmitted: (_) {
+                        // Handle form submission if needed
+                      },
                       validator: (value) {
                         if (value != _passwordController.text) {
                           return 'Passwords do not match';
