@@ -3,6 +3,8 @@ plugins {
     id "kotlin-android"
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id "dev.flutter.flutter-gradle-plugin"
+    // id "com.google.gms.google-services"
+
 }
 
 def keystoreProperties = new Properties()
@@ -13,9 +15,10 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.odatransportation.app"
+    // Use Flutter-managed NDK so we can pick up NDK r27+ for 16 KB page-size support
     compileSdk = 35
-    // Removed explicit NDK version - will use default or installed NDK
-    // ndkVersion = "25.1.8937393"
+    ndkVersion = "28.0.12433566" 
+    // if you installed NDK r28, you can use this: ndkVersion = "28.0.12433566"
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_1_8
@@ -32,8 +35,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode = 7
-        versionName = flutter.versionName
+        versionCode 20
+        versionName "0.3.0"
         
         // Support 16 KB page size for Android 15+ devices
         ndk {
@@ -52,31 +55,48 @@ android {
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.release
-            // Disabled debug symbol stripping due to incomplete NDK installation
-            // ndk {
-            //     debugSymbolLevel = 'FULL'
-            // }
+            // Production release build with proper signing
+            signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true  // Add resource shrinking for security
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            // Debug builds use auto-generated debug signing
+            // This is NOT used for production releases
+        }
+    }
+
+    // 16 KB page size support configuration
+    packaging {
+        jniLibs {
+            useLegacyPackaging = false
+        }
+    }
+
+    // Ensure proper alignment for 16 KB page sizes
+    bundle {
+        language {
+            enableSplit = false
+        }
+        density {
+            enableSplit = false
+        }
+        abi {
+            enableSplit = false
         }
     }
     
-    packagingOptions {
-        // Prevent stripping of debug symbols when NDK toolchain is incomplete
-        doNotStrip '**/*.so'
-    }
-    
-    // Note: 16 KB alignment for native libraries is handled by Flutter 3.24.3+
-    // Native libraries built with Flutter are automatically aligned to 16 KB boundaries
-    
-    // Enable 16 KB page size support for native libraries
-    androidResources {
-        noCompress 'tflite'
-        noCompress 'lite'
+    // Additional configuration for 16 KB page size support
+    splits {
+        abi {
+            enable false
+        }
     }
 }
 
 flutter {
-    source = "../.."
+    source '../..'
 }
 
 // Disable stripDebugSymbols task due to incomplete NDK installation

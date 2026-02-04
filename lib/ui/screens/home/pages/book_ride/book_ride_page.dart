@@ -2485,6 +2485,11 @@ class _GratuitySelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    // Handle empty gratuities list
+    if (gratuities.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
     // Separate gratuities: cash tip (percentage 0) and percentage-based tips
     final cashTipGratuity = gratuities.firstWhere(
       (g) => g.percentage == 0,

@@ -1,5 +1,8 @@
 # How to Use Emulator for ODA Transportation Flutter App
 
+> **📱 Testing 16KB Page Size Support?**  
+> See **[16KB_EMULATOR_GUIDE.md](./16KB_EMULATOR_GUIDE.md)** for instructions on creating and testing with a 16KB page size emulator (required for Android 15+ compatibility).
+
 ## Quick Start
 
 ### 1. Launch an Android Emulator
