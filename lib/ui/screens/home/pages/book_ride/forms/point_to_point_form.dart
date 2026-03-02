@@ -327,7 +327,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
           : selectedDateTime;
 
       if (selectedDateTime.isBefore(minReturnTime)) {
-        CustomSnackbar.show(
+      CustomSnackbar.showInfo(
           context,
           'Return pickup must be at least 1 hour after pickup time. Time adjusted automatically.',
         );
@@ -387,7 +387,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     );
 
     if (selectedDateTime.isBefore(minBookingTime)) {
-      CustomSnackbar.show(
+      CustomSnackbar.showInfo(
         context,
         'Bookings must be at least 2 hours in advance. Time adjusted automatically.',
       );
@@ -1291,8 +1291,10 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       setState(() {
         _pickupDateTime = corrected;
       });
-      _showSnackbar(
-          'Pickup time adjusted to meet 2-hour advance booking requirement.');
+      CustomSnackbar.showInfo(
+        context,
+        'Pickup time adjusted to meet 2-hour advance booking requirement.',
+      );
       return;
     }
 
@@ -1308,8 +1310,10 @@ class _PointToPointFormState extends State<_PointToPointForm> {
         setState(() {
           _returnDateTime = minReturnTime;
         });
-        _showSnackbar(
-            'Return pickup time adjusted to be at least 1 hour after pickup.');
+        CustomSnackbar.showInfo(
+          context,
+          'Return pickup time adjusted to be at least 1 hour after pickup.',
+        );
         return;
       }
     }
@@ -1414,7 +1418,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     );
 
     if (success && mounted) {
-      _showSnackbar('Your booking request has been submitted.');
+      CustomSnackbar.showSuccess(context, 'Your booking request has been submitted.');
       setState(() {
         _selectedExtras.clear();
         _instructionsController.clear();

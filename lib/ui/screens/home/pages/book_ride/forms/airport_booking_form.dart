@@ -45,12 +45,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   TimeOfDay? _pickupTime;
   DateTime? _returnDate;
   TimeOfDay? _returnTime;
-  String? _airline;
-  String? _arrivalFlightNumber;
-  String? _returnAirline;
-  String? _returnFlightNumber;
   bool _hasAdditionalStop = false;
-  String _additionalStopDescription = '';
   int? _selectedCarId;
   int? _selectedGratuityId;
   int? _selectedAdditionalStopId;
@@ -315,7 +310,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         _selectedAdditionalStopId = availableStops.first.additionalStopId;
       } else {
         _selectedAdditionalStopId = null;
-        _additionalStopDescription = '';
       }
     });
   }
@@ -1518,7 +1512,8 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       authenticated: true,
     );
     if (success && mounted) {
-      _showSnackbar('Airport booking submitted. We will confirm shortly.');
+      CustomSnackbar.showSuccess(
+          context, 'Airport booking submitted. We will confirm shortly.');
       bookingProvider.clearMessages();
     } else if (!success && mounted) {
       _showSnackbar(

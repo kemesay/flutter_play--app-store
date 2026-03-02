@@ -5,6 +5,7 @@ import '../../../../providers/auth_provider.dart';
 import '../../../../providers/booking_provider.dart';
 import '../../../../providers/payment_provider.dart';
 import '../../../../data/models/booking_history_item.dart';
+import '../../auth/change_password_screen.dart';
 import 'current_bookings_page.dart';
 import 'booking_history_page.dart';
 import 'payment_history_page.dart';
@@ -186,8 +187,193 @@ class _MyAccountPageState extends State<MyAccountPage> {
             ),
           ],
         ),
+
+        const SizedBox(height: 16),
+
+        // Account Management Section
+        _SectionCard(
+          title: 'Account',
+          icon: Icons.person_rounded,
+          iconColor: Colors.red,
+          children: [
+            _MenuItem(
+              title: 'Change Password',
+              icon: Icons.lock_rounded,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const ChangePasswordScreen(),
+                  ),
+                );
+              },
+            ),
+            const Divider(height: 1),
+            _MenuItem(
+              title: 'Delete Account',
+              icon: Icons.delete_forever_rounded,
+              iconColor: Colors.red,
+              onTap: () => _showDeleteAccountDialog(context),
+            ),
+          ],
+        ),
       ],
     );
+  }
+
+  Future<void> _showDeleteAccountDialog(BuildContext context) async {
+    final authProvider = context.read<AuthProvider>();
+
+    // First confirmation dialog
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Delete Account',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to permanently delete your account?',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'This action cannot be undone. All your data will be permanently deleted, including:',
+            ),
+            SizedBox(height: 8),
+            Text('• Your profile information'),
+            Text('• Booking history'),
+            Text('• Payment methods'),
+            Text('• All account data'),
+            SizedBox(height: 12),
+            Text(
+              'If you have any active bookings, please cancel them before deleting your account.',
+              style: TextStyle(
+                fontWeight: FontWeight.w500,
+                color: Colors.orange,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // Second confirmation dialog (App Store requirement - prevent accidental deletion)
+    final finalConfirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red, size: 28),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Final Confirmation',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'This is your last chance to cancel.',
+              style: TextStyle(fontWeight: FontWeight.w600),
+            ),
+            SizedBox(height: 12),
+            Text(
+              'Your account will be permanently deleted and cannot be recovered. Are you absolutely sure?',
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Delete Forever'),
+          ),
+        ],
+      ),
+    );
+
+    if (finalConfirmed != true) return;
+
+    // Show loading indicator
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    // Delete account
+    final success = await authProvider.deleteAccount();
+
+    if (!context.mounted) return;
+    Navigator.of(context).pop(); // Close loading dialog
+
+    if (success) {
+      // Show success message and navigate to auth screen
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your account has been permanently deleted.'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      // Navigation will happen automatically via AuthProvider state change
+    } else {
+      // Show error message
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            authProvider.errorMessage ??
+                'Failed to delete account. Please try again.',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
   }
 }
 
@@ -601,19 +787,25 @@ class _MenuItem extends StatelessWidget {
     required this.icon,
     required this.onTap,
     this.badge,
+    this.iconColor,
   });
 
   final String title;
   final IconData icon;
   final VoidCallback onTap;
   final int? badge;
+  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final effectiveIconColor = iconColor ?? theme.colorScheme.primary;
     return ListTile(
-      leading: Icon(icon, color: theme.colorScheme.primary),
-      title: Text(title),
+      leading: Icon(icon, color: effectiveIconColor),
+      title: Text(
+        title,
+        style: iconColor != null ? TextStyle(color: iconColor) : null,
+      ),
       trailing: badge != null
           ? Badge(
               label: Text('$badge'),

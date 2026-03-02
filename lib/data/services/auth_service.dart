@@ -131,5 +131,18 @@ class AuthService {
     await _tokenStorage.deleteToken();
     await _tokenStorage.clearUserProfile();
   }
+
+  /// Deletes the current user's account permanently.
+  /// This is required by App Store Guideline 5.1.1(v) - Data Collection and Storage.
+  /// The account deletion is permanent and cannot be undone.
+  Future<void> deleteAccount() async {
+    await _apiClient.delete(
+      '/users/me',
+      authenticated: true,
+    );
+    // Clear local data after successful deletion
+    await _tokenStorage.deleteToken();
+    await _tokenStorage.clearUserProfile();
+  }
 }
 

@@ -118,6 +118,87 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Deletes the current user's account permanently.
+  /// This complies with App Store Guideline 5.1.1(v) - Data Collection and Storage.
+  /// Returns true if deletion was successful, false otherwise.
+  Future<bool> deleteAccount() async {
+    _setLoadingState(true);
+    try {
+      await _authService.deleteAccount();
+      _currentUser = null;
+      _setError(null);
+      return true;
+    } catch (error) {
+      _setError(error.toString());
+      return false;
+    } finally {
+      _setLoadingState(false);
+    }
+  }
+
+  /// Changes the current user's password.
+  /// Returns true if password change was successful, false otherwise.
+  /// Automatically logs out the user after successful password change.
+  Future<bool> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    _setLoadingState(true);
+    try {
+      await _authService.changePassword(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+      );
+      _setError(null);
+      // Log out user after successful password change
+      await logout();
+      return true;
+    } catch (error) {
+      _setError(error.toString());
+      return false;
+    } finally {
+      _setLoadingState(false);
+    }
+  }
+
+  /// Requests a password reset by sending a reset token to the user's email.
+  /// Returns true if the request was successful, false otherwise.
+  Future<bool> requestPasswordReset({required String email}) async {
+    _setLoadingState(true);
+    try {
+      await _authService.requestPasswordReset(email: email);
+      _setError(null);
+      return true;
+    } catch (error) {
+      _setError(error.toString());
+      return false;
+    } finally {
+      _setLoadingState(false);
+    }
+  }
+
+  /// Resets the user's password using a token sent to their email.
+  /// Returns true if the reset was successful, false otherwise.
+  Future<bool> resetPassword({
+    required String token,
+    required String newPassword,
+  }) async {
+    _setLoadingState(true);
+    try {
+      await _authService.resetPassword(
+        token: token,
+        newPassword: newPassword,
+      );
+      _setError(null);
+      return true;
+    } catch (error) {
+      _setError(error.toString());
+      return false;
+    } finally {
+      _setLoadingState(false);
+    }
+  }
+
   void _setLoadingState(bool value) {
     _isLoading = value;
     notifyListeners();
@@ -128,4 +209,3 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 }
-

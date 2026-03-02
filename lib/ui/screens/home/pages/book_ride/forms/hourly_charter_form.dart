@@ -964,7 +964,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     );
 
     if (selectedDateTime.isBefore(minBookingTime)) {
-      CustomSnackbar.show(
+      CustomSnackbar.showInfo(
         context,
         'Bookings must be at least 2 hours in advance. Time adjusted automatically.',
       );
@@ -1051,8 +1051,10 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       setState(() {
         _pickupDateTime = corrected;
       });
-      _showSnackbar(
-          'Pickup time adjusted to meet 2-hour advance booking requirement.');
+      CustomSnackbar.showInfo(
+        context,
+        'Pickup time adjusted to meet 2-hour advance booking requirement.',
+      );
       return;
     }
     if (_selectedCarId == null) {
@@ -1143,7 +1145,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       authenticated: true,
     );
     if (success && mounted) {
-      _showSnackbar('Hourly charter request submitted.');
+      CustomSnackbar.showSuccess(context, 'Hourly charter request submitted.');
       bookingProvider.clearMessages();
     } else if (!success && mounted) {
       _showSnackbar(

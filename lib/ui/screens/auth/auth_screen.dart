@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
 import '../../../providers/auth_provider.dart';
 import '../../../ui/widgets/custom_snackbar.dart';
+import 'forgot_password_screen.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -298,7 +298,22 @@ class _LoginFormState extends State<_LoginForm> {
                       isLoading: authProvider.isLoading,
                       label: 'Login',
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 16),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ForgotPasswordScreen(),
+                            ),
+                          );
+                        },
+                        child: const Text('Forgot Password?'),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       'By signing in, you accept our terms of service and privacy policy.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -327,7 +342,9 @@ class _LoginFormState extends State<_LoginForm> {
       username: _usernameController.text.trim(),
       password: _passwordController.text.trim(),
     );
-    if (!success && mounted) {
+    if (success && mounted) {
+      // Login successful - no snackbar needed as user is redirected automatically
+    } else if (!success && mounted) {
       CustomSnackbar.show(
         context,
         authProvider.errorMessage ?? 'Login failed',
@@ -471,6 +488,8 @@ class _RegisterFormState extends State<_RegisterForm> {
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
+                      onChanged: (_) => setState(
+                          () {}), // Trigger rebuild for live strength check
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outline),
@@ -603,7 +622,16 @@ class _RegisterFormState extends State<_RegisterForm> {
       password: _passwordController.text.trim(),
     );
 
-    if (!success && mounted) {
+    if (success && mounted) {
+      // Show success message with green background
+      CustomSnackbar.showSuccess(
+        context,
+        'Account created successfully! Please login with your credentials.',
+      );
+
+      // Switch to login tab after successful registration
+      // The main app will automatically show the login screen
+    } else if (!success && mounted) {
       CustomSnackbar.show(
         context,
         authProvider.errorMessage ?? 'Unable to create account',

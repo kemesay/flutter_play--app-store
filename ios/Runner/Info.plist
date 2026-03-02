@@ -45,6 +45,8 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>GMSApiKey</key>
+	<string>AIzaSyCvm85RFSLVS4DV7zBb1l0UlOJ1tpSXRPQ</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>ODA Black Car Service needs access to your location to show your current position on the map, help you find nearby pickup points, calculate accurate ride distances and fares, and provide real-time navigation during your trip.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
