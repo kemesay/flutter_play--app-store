@@ -13,7 +13,6 @@ import 'package:oda_black_car_service/core/utils/distance_utils.dart';
 import 'package:oda_black_car_service/core/utils/pricing_calculator.dart';
 import 'package:oda_black_car_service/data/models/additional_stop_model.dart';
 import 'package:oda_black_car_service/data/models/airport_booking_request.dart';
-import 'package:oda_black_car_service/data/models/airport_model.dart';
 import 'package:oda_black_car_service/data/models/airport_pickup_preference_model.dart';
 import 'package:oda_black_car_service/data/models/card_details.dart';
 import 'package:oda_black_car_service/core/utils/card_validation_utils.dart';
@@ -109,6 +108,16 @@ class _BookRidePageState extends State<BookRidePage> {
     }
   }
 
+  void scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 450),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
   // Static method to access scroll control from forms
   static void saveScrollPositionStatic() {
     _instance?.saveScrollPosition();
@@ -116,6 +125,10 @@ class _BookRidePageState extends State<BookRidePage> {
 
   static void restoreScrollPositionStatic() {
     _instance?.restoreScrollPosition();
+  }
+
+  static void scrollToTopStatic() {
+    _instance?.scrollToTop();
   }
 
   @override
@@ -2031,13 +2044,19 @@ class _TripTypeSelector extends StatelessWidget {
   }
 }
 
-class _LocationPickerField extends StatelessWidget {
+class _LocationPickerField extends StatefulWidget {
   const _LocationPickerField({
     required this.controller,
     required this.placeService,
     required this.sessionToken,
     required this.onPlaceSelected,
     required this.label,
+    this.country,
+    this.hintText,
+    this.helperText,
+    this.prefixIcon = Icons.location_on_outlined,
+    this.suggestionIcon = Icons.place_outlined,
+    this.onCleared,
   });
 
   final TextEditingController controller;
@@ -2045,20 +2064,38 @@ class _LocationPickerField extends StatelessWidget {
   final String sessionToken;
   final ValueChanged<PlaceDetail> onPlaceSelected;
   final String label;
+  final String? country;
+  final String? hintText;
+  final String? helperText;
+  final IconData prefixIcon;
+  final IconData suggestionIcon;
+  final VoidCallback? onCleared;
+
+  @override
+  State<_LocationPickerField> createState() => _LocationPickerFieldState();
+}
+
+class _LocationPickerFieldState extends State<_LocationPickerField> {
+  String? _lastSelectedSuggestion;
 
   @override
   Widget build(BuildContext context) {
     return typeahead.TypeAheadField<Place>(
-      controller: controller,
+      controller: widget.controller,
       suggestionsCallback: (pattern) async {
         // Allow search with just 1 character for better responsiveness
         // This enables searching for ANY location via Google Places Autocomplete, not limited to presets
         if (pattern.trim().isEmpty) return const [];
+        final normalizedPattern = pattern.trim().toLowerCase();
+        if (_lastSelectedSuggestion == normalizedPattern) {
+          return const [];
+        }
         try {
           // Search any location worldwide (restricted by country parameter if needed)
-          return await placeService.fetchSuggestions(
+          return await widget.placeService.fetchSuggestions(
             pattern,
-            sessionToken: sessionToken,
+            sessionToken: widget.sessionToken,
+            country: widget.country,
           );
         } catch (e) {
           // Silently handle errors - return empty list
@@ -2070,7 +2107,7 @@ class _LocationPickerField extends StatelessWidget {
       },
       itemBuilder: (context, suggestion) => ListTile(
         leading: Icon(
-          Icons.place_outlined,
+          widget.suggestionIcon,
           color: Theme.of(context).colorScheme.primary,
         ),
         title: Text(
@@ -2080,13 +2117,14 @@ class _LocationPickerField extends StatelessWidget {
         dense: true,
       ),
       onSelected: (suggestion) async {
-        controller.text = suggestion.description;
+        widget.controller.text = suggestion.description;
+        _lastSelectedSuggestion = suggestion.description.trim().toLowerCase();
         try {
-          final detail = await placeService.fetchPlaceDetail(
+          final detail = await widget.placeService.fetchPlaceDetail(
             suggestion.placeId,
-            sessionToken: sessionToken,
+            sessionToken: widget.sessionToken,
           );
-          onPlaceSelected(detail);
+          widget.onPlaceSelected(detail);
         } catch (e) {
           // Handle error - show snackbar
           if (context.mounted) {
@@ -2102,6 +2140,7 @@ class _LocationPickerField extends StatelessWidget {
       hideOnEmpty: false,
       hideOnError: true,
       hideOnLoading: false,
+      hideOnSelect: true,
       debounceDuration: const Duration(milliseconds: 300),
       builder: (context, textEditingController, focusNode) {
         // Prevent auto-scrolling when location field gets focus
@@ -2120,14 +2159,17 @@ class _LocationPickerField extends StatelessWidget {
           controller: textEditingController,
           focusNode: focusNode,
           decoration: InputDecoration(
-            labelText: label,
-            hintText: 'Search any location...',
-            prefixIcon: const Icon(Icons.location_on_outlined),
+            labelText: widget.label,
+            hintText: widget.hintText ?? 'Search any location...',
+            helperText: widget.helperText,
+            prefixIcon: Icon(widget.prefixIcon),
             suffixIcon: textEditingController.text.isNotEmpty
                 ? IconButton(
                     icon: const Icon(Icons.clear),
                     onPressed: () {
                       textEditingController.clear();
+                      _lastSelectedSuggestion = null;
+                      widget.onCleared?.call();
                       focusNode.unfocus();
                     },
                   )

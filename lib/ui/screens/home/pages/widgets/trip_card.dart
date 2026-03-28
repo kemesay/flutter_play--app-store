@@ -433,7 +433,11 @@ class BookingDetailsDialog extends StatelessWidget {
                         context,
                         'Airport Information',
                         [
-
+                          if (rawData['airportLocationAddress'] != null)
+                            _buildDetailRow(
+                                'Airport / Terminal',
+                                rawData['airportLocationAddress']?.toString() ??
+                                    'N/A'),
                           if (rawData['airline'] != null)
                             _buildDetailRow('Airline',
                                 rawData['airline']?.toString() ?? 'N/A'),

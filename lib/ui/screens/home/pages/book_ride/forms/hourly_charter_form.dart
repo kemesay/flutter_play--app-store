@@ -7,11 +7,11 @@ class _HourlyCharterForm extends StatefulWidget {
   State<_HourlyCharterForm> createState() => _HourlyCharterFormState();
 }
 
-// Utility function to get minimum allowed booking time (2 hours from now)
-// Matches React website implementation: minimumPickupLeadTime = currentDateTime.add(2, "hour")
+// Utility function to get minimum allowed booking time (1 hour from now)
+// Matches React website implementation: minimumPickupLeadTime = currentDateTime.add(1, "hour")
 DateTime _getMinBookingTimeHourlyCharter() {
   final now = DateTime.now();
-  // Add 2 hours and reset seconds/milliseconds to 0 (like React: .second(0).millisecond(0))
+  // Add 1 hour and reset seconds/milliseconds to 0 (like React: .second(0).millisecond(0))
   return DateTime(
     now.year,
     now.month,
@@ -20,7 +20,7 @@ DateTime _getMinBookingTimeHourlyCharter() {
     now.minute,
     0, // seconds
     0, // milliseconds
-  ).add(const Duration(hours: 2));
+  ).add(const Duration(hours: 1));
 }
 
 // Get minimum date (start of day for minimum pickup lead time)
@@ -966,7 +966,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     if (selectedDateTime.isBefore(minBookingTime)) {
       CustomSnackbar.showInfo(
         context,
-        'Bookings must be at least 2 hours in advance. Time adjusted automatically.',
+        'Bookings must be at least 1 hour in advance. Time adjusted automatically.',
       );
     }
 
@@ -1038,7 +1038,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       return;
     }
 
-    // Validate 2-hour advance booking requirement (like React website)
+    // Validate 1-hour advance booking requirement (like React website)
     final minBookingTime = _getMinBookingTimeHourlyCharter();
     if (_pickupDateTime!.isBefore(minBookingTime)) {
       // Auto-correct to minimum time
@@ -1053,7 +1053,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       });
       CustomSnackbar.showInfo(
         context,
-        'Pickup time adjusted to meet 2-hour advance booking requirement.',
+        'Pickup time adjusted to meet 1-hour advance booking requirement.',
       );
       return;
     }
@@ -1147,6 +1147,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     if (success && mounted) {
       CustomSnackbar.showSuccess(context, 'Hourly charter request submitted.');
       bookingProvider.clearMessages();
+      _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {
       _showSnackbar(
           bookingProvider.errorMessage ?? 'Unable to submit reservation.');

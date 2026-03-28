@@ -35,12 +35,13 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode 21
-        versionName "0.3.1"
+        versionCode 24
+        versionName "0.3.3"
         
         // Support 16 KB page size for Android 15+ devices
+        // Note: x86 (32-bit) is excluded as it doesn't support 16KB page sizes
         ndk {
-            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64'
         }
     }
 
@@ -60,6 +61,11 @@ android {
             minifyEnabled true
             shrinkResources true  // Add resource shrinking for security
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            
+            // Ensure native libraries are not stripped of alignment information
+            ndk {
+                debugSymbolLevel = 'FULL'
+            }
         }
         debug {
             // Debug builds use auto-generated debug signing
@@ -71,6 +77,10 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = false
+        }
+        // Ensure native libraries maintain 16KB alignment
+        resources {
+            excludes += ['META-INF/*']
         }
     }
 
@@ -97,11 +107,4 @@ android {
 
 flutter {
     source '../..'
-}
-
-// Disable stripDebugSymbols task due to incomplete NDK installation
-afterEvaluate {
-    tasks.matching { it.name.contains("stripDebugSymbols") }.configureEach {
-        enabled = false
-    }
 }

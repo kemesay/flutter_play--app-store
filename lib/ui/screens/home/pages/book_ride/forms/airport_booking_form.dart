@@ -18,6 +18,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   static const String _allVehiclesLabel = 'All Vehicles';
 
   final _accommodationController = TextEditingController();
+  final _airportController = TextEditingController();
   final _instructionController = TextEditingController();
   final _airlineController = TextEditingController();
   final _arrivalFlightNumberController = TextEditingController();
@@ -35,7 +36,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   final _returnTimeFocusNode = FocusNode();
 
   PlaceDetail? _accommodationDetail;
-  AirportModel? _selectedAirport;
+  PlaceDetail? _airportLocationDetail;
   AirportPickupPreferenceModel? _selectedPreference;
 
   String _tripType = 'Ride to the airport(one way)';
@@ -76,6 +77,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   @override
   void dispose() {
     _accommodationController.dispose();
+    _airportController.dispose();
     _instructionController.dispose();
     _airlineController.dispose();
     _arrivalFlightNumberController.dispose();
@@ -179,7 +181,8 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         : 'Awaiting route';
     final durationLabel = _routeDurationText ?? 'Pending';
     final tripLabel = _readableTripType();
-    final hasRoute = _accommodationDetail != null && _selectedAirport != null;
+    final hasRoute =
+        _accommodationDetail != null && _airportLocationDetail != null;
 
     return Container(
       width: double.infinity,
@@ -226,7 +229,9 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
               ),
               _RouteStop(
                 label: 'Airport',
-                value: _selectedAirport?.airportName ?? 'Awaiting selection',
+                value: _airportController.text.isEmpty
+                    ? 'Awaiting selection'
+                    : _airportController.text,
                 icon: Icons.flight_takeoff,
               ),
             ],
@@ -272,16 +277,14 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     );
   }
 
-  PlaceDetail? _airportPlaceDetail() {
-    final airport = _selectedAirport;
-    if (airport == null) return null;
-    return PlaceDetail(
-      placeId: 'airport-${airport.airportId}',
-      formattedAddress: airport.airportName,
-      lat: airport.airportAddressLatitude,
-      lng: airport.airportAddressLongitude,
-      countryCode: 'US',
-    );
+  PlaceDetail? _airportPlaceDetail() => _airportLocationDetail;
+
+  bool _isValidCaliforniaAirportSelection(PlaceDetail detail) {
+    if (!_isCaliforniaLocation(detail)) {
+      _showSnackbar('Airport/terminal pickup must be in California.');
+      return false;
+    }
+    return true;
   }
 
   void _handleBookingForChanged(String value, AuthProvider auth) {
@@ -315,13 +318,13 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   }
 
   Future<void> _fetchRouteDistance() async {
-    if (_selectedAirport == null || _accommodationDetail == null) return;
+    if (_airportLocationDetail == null || _accommodationDetail == null) return;
     try {
       final route = await _directionsService.fetchRoute(
         origin: LatLng(_accommodationDetail!.lat, _accommodationDetail!.lng),
         destination: LatLng(
-          _selectedAirport!.airportAddressLatitude,
-          _selectedAirport!.airportAddressLongitude,
+          _airportLocationDetail!.lat,
+          _airportLocationDetail!.lng,
         ),
       );
       if (mounted && route != null) {
@@ -379,12 +382,12 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     }
 
     final straightDistance =
-        _accommodationDetail != null && _selectedAirport != null
+        _accommodationDetail != null && _airportLocationDetail != null
             ? haversineDistanceInMiles(
                 startLat: _accommodationDetail!.lat,
                 startLng: _accommodationDetail!.lng,
-                endLat: _selectedAirport!.airportAddressLatitude,
-                endLng: _selectedAirport!.airportAddressLongitude,
+                endLat: _airportLocationDetail!.lat,
+                endLng: _airportLocationDetail!.lng,
               )
             : null;
     final effectiveDistance = _routeDistanceInMiles ?? straightDistance;
@@ -450,47 +453,34 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         children: [
           const _ProfessionalSectionHeader(
             title: '1. Pickup & Drop-off Locations',
-            subtitle: 'Select your airport and accommodation',
+            subtitle: 'Airport pickup in California, drop-off across USA',
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<AirportModel>(
-            decoration: const InputDecoration(
-              labelText: 'Airport',
-              hintText: 'Select Airport',
-            ),
-            value: _selectedAirport,
-            hint: const Text('Select Airport'),
-            items: catalog.airports
-                .map(
-                  (airport) => DropdownMenuItem(
-                    value: airport,
-                    child: Container(
-                      constraints: const BoxConstraints(maxWidth: 250),
-                      child: Text(
-                        airport.airportName,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                  ),
-                )
-                .toList(),
-            onChanged: (value) {
+          _LocationPickerField(
+            label: 'Airport / terminal pickup',
+            controller: _airportController,
+            placeService: _placeService,
+            sessionToken: _sessionToken,
+            country: 'US',
+            onCleared: () {
               setState(() {
-                _selectedAirport = value;
+                _airportLocationDetail = null;
                 _routeDistanceInMiles = null;
                 _routeDurationText = null;
                 _routePolyline = null;
               });
-              if (value != null && _accommodationDetail != null) {
+            },
+            onPlaceSelected: (detail) {
+              if (!_isValidCaliforniaAirportSelection(detail)) return;
+              setState(() {
+                _airportLocationDetail = detail;
+                _routeDistanceInMiles = null;
+                _routeDurationText = null;
+                _routePolyline = null;
+              });
+              if (_accommodationDetail != null) {
                 _fetchRouteDistance();
               }
-            },
-            validator: (value) {
-              if (value == null) {
-                return 'Select an airport';
-              }
-              return null;
             },
           ),
           const SizedBox(height: 16),
@@ -499,6 +489,14 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
             controller: _accommodationController,
             placeService: _placeService,
             sessionToken: _sessionToken,
+            onCleared: () {
+              setState(() {
+                _accommodationDetail = null;
+                _routeDistanceInMiles = null;
+                _routeDurationText = null;
+                _routePolyline = null;
+              });
+            },
             onPlaceSelected: (detail) {
               if (!_isUnitedStatesLocation(detail)) {
                 _showSnackbar(
@@ -511,7 +509,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
                 _routeDurationText = null;
                 _routePolyline = null;
               });
-              if (_selectedAirport != null) {
+              if (_airportLocationDetail != null) {
                 _fetchRouteDistance();
               }
             },
@@ -623,10 +621,10 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
 
               final summaryItems = [
                 _SummaryItem(label: 'Trip type', value: _readableTripType()),
-                if (_selectedAirport != null)
+                if (_airportController.text.isNotEmpty)
                   _SummaryItem(
                     label: 'Airport',
-                    value: _selectedAirport!.airportName,
+                    value: _airportController.text,
                   ),
                 if (_accommodationController.text.isNotEmpty)
                   _SummaryItem(
@@ -1321,12 +1319,12 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         timeOfDay.minute,
       );
 
-      // Validate: time must be at least 2 hours in advance (like React)
+      // Validate: time must be at least 1 hour in advance (like React)
       if (selectedDateTime.isBefore(minBookingTime)) {
         // Invalid selection - show error and re-prompt with minimum time
         CustomSnackbar.show(
           context,
-          'Bookings must be at least 2 hours in advance. Please select a later time.',
+          'Bookings must be at least 1 hour in advance. Please select a later time.',
         );
         // Update initial time to minimum for next prompt
         currentInitialTime =
@@ -1363,7 +1361,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       return;
     }
 
-    // Validate 2-hour advance booking requirement (like React website)
+    // Validate 1-hour advance booking requirement (like React website)
     final pickupDateTime = DateTime(
       _pickupDate!.year,
       _pickupDate!.month,
@@ -1375,7 +1373,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     if (pickupDateTime.isBefore(minBookingTime)) {
       // Invalid time - prompt user to select valid time (no auto-correction)
       _showSnackbar(
-          'Pickup time must be at least 2 hours in advance. Please select a valid time.');
+          'Pickup time must be at least 1 hour in advance. Please select a valid time.');
       // Re-open time picker
       _pickTime(isReturn: false);
       return;
@@ -1405,8 +1403,23 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         return;
       }
     }
-    if (_selectedAirport == null || _accommodationDetail == null) {
+    if (_airportLocationDetail == null || _accommodationDetail == null) {
       _showSnackbar('Select airport and accommodation.');
+      return;
+    }
+    if (_airportLocationDetail!.lat == 0 ||
+        _airportLocationDetail!.lng == 0 ||
+        _accommodationDetail!.lat == 0 ||
+        _accommodationDetail!.lng == 0) {
+      _showSnackbar(
+          'Please select both airport and accommodation from Google suggestions.');
+      return;
+    }
+    if (_airportController.text.trim().isEmpty) {
+      _showSnackbar('Select airport pickup from suggestions.');
+      return;
+    }
+    if (!_isValidCaliforniaAirportSelection(_airportLocationDetail!)) {
       return;
     }
     if (_selectedCarId == null) {
@@ -1457,13 +1470,15 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         haversineDistanceInMiles(
           startLat: _accommodationDetail!.lat,
           startLng: _accommodationDetail!.lng,
-          endLat: _selectedAirport!.airportAddressLatitude,
-          endLng: _selectedAirport!.airportAddressLongitude,
+          endLat: _airportLocationDetail!.lat,
+          endLng: _airportLocationDetail!.lng,
         );
 
     final request = AirportBookingRequest(
       tripType: _tripType,
-      airportId: _selectedAirport!.airportId,
+      airportLocationAddress: _airportController.text.trim(),
+      airportLocationLatitude: _airportLocationDetail!.lat,
+      airportLocationLongitude: _airportLocationDetail!.lng,
       numberOfPassengers: _passengers,
       numberOfSuitcases: _suitcases,
       accommodationAddress: _accommodationDetail!.formattedAddress,
@@ -1515,6 +1530,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       CustomSnackbar.showSuccess(
           context, 'Airport booking submitted. We will confirm shortly.');
       bookingProvider.clearMessages();
+      _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {
       _showSnackbar(
           bookingProvider.errorMessage ?? 'Unable to submit booking.');
@@ -1576,11 +1592,11 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   }
 }
 
-// Utility function to get minimum allowed booking time (2 hours from now)
-// Matches React website implementation: minimumPickupLeadTime = currentDateTime.add(2, "hour")
+// Utility function to get minimum allowed booking time (1 hour from now)
+// Matches React website implementation: minimumPickupLeadTime = currentDateTime.add(1, "hour")
 DateTime _getMinBookingTimeAirport() {
   final now = DateTime.now();
-  // Add 2 hours and reset seconds/milliseconds to 0 (like React: .second(0).millisecond(0))
+  // Add 1 hour and reset seconds/milliseconds to 0 (like React: .second(0).millisecond(0))
   return DateTime(
     now.year,
     now.month,
@@ -1589,7 +1605,7 @@ DateTime _getMinBookingTimeAirport() {
     now.minute,
     0, // seconds
     0, // milliseconds
-  ).add(const Duration(hours: 2));
+  ).add(const Duration(hours: 1));
 }
 
 // Get minimum date (start of day for minimum pickup lead time)

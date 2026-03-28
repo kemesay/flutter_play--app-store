@@ -5,7 +5,9 @@ import 'selected_extra_option.dart';
 class AirportBookingRequest {
   AirportBookingRequest({
     required this.tripType,
-    required this.airportId,
+    required this.airportLocationAddress,
+    required this.airportLocationLatitude,
+    required this.airportLocationLongitude,
     required this.numberOfPassengers,
     required this.numberOfSuitcases,
     required this.accommodationAddress,
@@ -36,7 +38,9 @@ class AirportBookingRequest {
   });
 
   final String tripType;
-  final int airportId;
+  final String airportLocationAddress;
+  final double airportLocationLatitude;
+  final double airportLocationLongitude;
   final int numberOfPassengers;
   final int numberOfSuitcases;
   final String accommodationAddress;
@@ -68,7 +72,9 @@ class AirportBookingRequest {
   Map<String, dynamic> toJson() {
     final data = <String, dynamic>{
       'tripType': tripType,
-      'airportId': airportId,
+      'airportLocationAddress': airportLocationAddress,
+      'airportLocationLatitude': airportLocationLatitude,
+      'airportLocationLongitude': airportLocationLongitude,
       'numberOfPassengers': numberOfPassengers,
       'numberOfSuitcases': numberOfSuitcases,
       'accommodationAddress': accommodationAddress,
