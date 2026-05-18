@@ -6,6 +6,9 @@ import '../data/services/booking_service.dart';
 import '../data/models/point_to_point_booking_request.dart';
 import '../data/models/airport_booking_request.dart';
 import '../data/models/hourly_charter_booking_request.dart';
+import '../data/models/airport_booking_update_request.dart';
+import '../data/models/point_to_point_booking_update_request.dart';
+import '../data/models/hourly_charter_booking_update_request.dart';
 
 class BookingProvider extends ChangeNotifier {
   BookingProvider({BookingService? bookingService})
@@ -81,6 +84,55 @@ class BookingProvider extends ChangeNotifier {
         authenticated: authenticated,
       ),
     );
+  }
+
+  Future<bool> updateAirportBooking(
+    int bookingId,
+    AirportBookingUpdateRequest request,
+  ) async {
+    return _updateBooking(
+      () => _bookingService.updateAirportBooking(bookingId, request),
+    );
+  }
+
+  Future<bool> updatePointToPointBooking(
+    int bookingId,
+    PointToPointBookingUpdateRequest request,
+  ) async {
+    return _updateBooking(
+      () => _bookingService.updatePointToPointBooking(bookingId, request),
+    );
+  }
+
+  Future<bool> updateHourlyCharterBooking(
+    int bookingId,
+    HourlyCharterBookingUpdateRequest request,
+  ) async {
+    return _updateBooking(
+      () => _bookingService.updateHourlyCharterBooking(bookingId, request),
+    );
+  }
+
+  Future<bool> _updateBooking(
+    Future<Map<String, dynamic>> Function() updateFn,
+  ) async {
+    _isSubmitting = true;
+    _successMessage = null;
+    notifyListeners();
+    try {
+      await updateFn();
+      _successMessage = 'Booking updated successfully.';
+      _errorMessage = null;
+      await refreshBookings();
+      return true;
+    } catch (error) {
+      _errorMessage = error.toString();
+      _successMessage = null;
+      return false;
+    } finally {
+      _isSubmitting = false;
+      notifyListeners();
+    }
   }
 
   Future<bool> _submitBooking(

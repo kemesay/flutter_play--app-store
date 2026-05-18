@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../../../../data/models/booking_history_item.dart';
 import '../../../../../ui/widgets/field_widget.dart';
+import '../update_booking/update_booking_page.dart';
 
 class TripCard extends StatelessWidget {
   const TripCard({
     super.key,
     required this.booking,
     this.showDetailsButton = true,
+    this.allowEdit = false,
   });
 
   final BookingHistoryItem booking;
   final bool showDetailsButton;
+  final bool allowEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -33,12 +36,18 @@ class TripCard extends StatelessWidget {
                   padding:
                       const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: colorScheme.primaryContainer,
+                    color: const Color(0xFF03930A).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF03930A).withOpacity(0.35),
+                    ),
                   ),
                   child: Text(
                     booking.displayTitle,
-                    style: TextStyle(color: colorScheme.onPrimaryContainer),
+                    style: const TextStyle(
+                      color: Color(0xFF03930A),
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
                 const Spacer(),
@@ -204,9 +213,12 @@ class TripCard extends StatelessWidget {
   }
 
   void _showBookingDetails(BuildContext context, BookingHistoryItem booking) {
-    showDialog(
+    showDialog<void>(
       context: context,
-      builder: (context) => BookingDetailsDialog(booking: booking),
+      builder: (context) => BookingDetailsDialog(
+        booking: booking,
+        allowEdit: allowEdit,
+      ),
     );
   }
 
@@ -274,9 +286,24 @@ class _StatusChip extends StatelessWidget {
 }
 
 class BookingDetailsDialog extends StatelessWidget {
-  const BookingDetailsDialog({super.key, required this.booking});
+  const BookingDetailsDialog({
+    super.key,
+    required this.booking,
+    this.allowEdit = false,
+  });
 
   final BookingHistoryItem booking;
+  final bool allowEdit;
+
+  static const _brandGreen = Color(0xFF03930A);
+
+  bool get _canEdit {
+    if (!allowEdit) return false;
+    final status = booking.bookingStatus.toUpperCase();
+    return status != 'COMPLETED' &&
+        status != 'CANCELLED' &&
+        status != 'REJECTED';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -508,6 +535,36 @@ class BookingDetailsDialog extends StatelessWidget {
                 ),
               ),
             ),
+            if (_canEdit)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _brandGreen,
+                      ),
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                        Navigator.of(context).push<bool>(
+                          MaterialPageRoute<bool>(
+                            builder: (_) =>
+                                UpdateBookingPage(booking: booking),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Update booking'),
+                    ),
+                    const SizedBox(height: 8),
+                    OutlinedButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Close'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

@@ -35,8 +35,8 @@ android {
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
         targetSdk = 35
-        versionCode 24
-        versionName "0.3.3"
+        versionCode 27
+        versionName "0.3.7"
         
         // Support 16 KB page size for Android 15+ devices
         // Note: x86 (32-bit) is excluded as it doesn't support 16KB page sizes

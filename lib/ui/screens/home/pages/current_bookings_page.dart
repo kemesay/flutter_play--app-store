@@ -282,7 +282,8 @@ class _BookingList extends StatelessWidget {
       itemBuilder: (context, index) {
         return TripCard(
           booking: bookings[index],
-          showDetailsButton: false,
+          showDetailsButton: true,
+          allowEdit: true,
         );
       },
     );

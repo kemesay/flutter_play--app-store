@@ -1,8 +1,11 @@
 import '../../core/network/api_client.dart';
 import '../models/airport_booking_request.dart';
+import '../models/airport_booking_update_request.dart';
 import '../models/booking_history_item.dart';
 import '../models/hourly_charter_booking_request.dart';
+import '../models/hourly_charter_booking_update_request.dart';
 import '../models/point_to_point_booking_request.dart';
+import '../models/point_to_point_booking_update_request.dart';
 
 class BookingService {
   BookingService({ApiClient? apiClient})
@@ -55,6 +58,45 @@ class BookingService {
     if (response is Map<String, dynamic>) {
       return response;
     }
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> updateAirportBooking(
+    int bookingId,
+    AirportBookingUpdateRequest request,
+  ) async {
+    final response = await _apiClient.patch(
+      '/users/bookings/mine/airport/$bookingId',
+      authenticated: true,
+      body: request.toJson(),
+    );
+    if (response is Map<String, dynamic>) return response;
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> updatePointToPointBooking(
+    int bookingId,
+    PointToPointBookingUpdateRequest request,
+  ) async {
+    final response = await _apiClient.patch(
+      '/users/bookings/mine/p2p/$bookingId',
+      authenticated: true,
+      body: request.toJson(),
+    );
+    if (response is Map<String, dynamic>) return response;
+    return {'success': true};
+  }
+
+  Future<Map<String, dynamic>> updateHourlyCharterBooking(
+    int bookingId,
+    HourlyCharterBookingUpdateRequest request,
+  ) async {
+    final response = await _apiClient.patch(
+      '/users/bookings/mine/hourly/$bookingId',
+      authenticated: true,
+      body: request.toJson(),
+    );
+    if (response is Map<String, dynamic>) return response;
     return {'success': true};
   }
 

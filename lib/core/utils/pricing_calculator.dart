@@ -181,13 +181,9 @@ class PricingCalculator {
 
     final hours = max(selectedHours, 1);
 
-    // Match website logic: vehicleFee * hour (where vehicleFee = pricePerHour)
-    // Note: Hourly doesn't double minimumStartFee, it's only added once
+    // Hourly: fare is hours × pricePerHour only (no minimum start fee).
     final vehicleFeeTotal = car.pricePerHour * hours;
-    final totalMinFee = car.minimumStartFee;
-
-    // Base fare for gratuity calculation (includes both vehicle fee and minimum fee)
-    final baseFare = _twoDecimals(vehicleFeeTotal + totalMinFee);
+    final baseFare = _twoDecimals(vehicleFeeTotal);
 
     final extras = _calculateExtras(
       isRoundTrip: false,
@@ -195,10 +191,9 @@ class PricingCalculator {
       selectedExtras: selectedExtras,
     );
 
-    // Match website logic: totalFee = vehicleFee + minimumStartFee + extras
-    final subtotal = _twoDecimals(vehicleFeeTotal + totalMinFee + extras);
+    final subtotal = _twoDecimals(vehicleFeeTotal + extras);
 
-    // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
+    // Gratuity applies to car fare only.
     final gratuityAmount = _calculateGratuity(baseFare, gratuity);
     final total = _twoDecimals(subtotal + gratuityAmount);
 
