@@ -241,9 +241,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
             color: Theme.of(context).colorScheme.primary,
           ),
           const SizedBox(width: 8),
-          Text(
-            tip,
-            style: Theme.of(context).textTheme.bodyMedium,
+          Expanded(
+            child: Text(
+              tip,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
           ),
         ],
       ),

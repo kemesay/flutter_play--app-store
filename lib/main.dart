@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/utils/date_utils.dart';
+import 'core/config/square_runtime_config.dart';
 import 'providers/auth_provider.dart';
 import 'providers/booking_provider.dart';
 import 'providers/catalog_provider.dart';
@@ -9,11 +10,35 @@ import 'providers/social_media_provider.dart';
 import 'providers/support_provider.dart';
 import 'ui/screens/auth/auth_screen.dart';
 import 'ui/screens/home/home_screen.dart';
+import 'ui/screens/driver/driver_home_screen.dart';
 import 'ui/screens/splash_screen.dart';
-import 'utils/custom_route.dart';
+import 'ui/theme/app_theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Prevent huge error dumps from blowing up layout (cascade overflow).
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    final message = details.exceptionAsString();
+    const maxLen = 400;
+    final short =
+        message.length <= maxLen ? message : '${message.substring(0, maxLen)}…';
+    return Material(
+      color: Colors.red.shade900,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            short,
+            maxLines: 6,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.yellow, fontSize: 13),
+          ),
+        ),
+      ),
+    );
+  };
+
   // Initialize timezone data for Pacific timezone formatting
   initializeTimezones();
   runApp(const MyApp());
@@ -24,34 +49,11 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Company brand color: #03930a
-    const brandColor = Color(0xFF03930A);
-    const brandLight = Color(0xFF4CB051);
-    const brandDark = Color(0xFF2C8A90);
-
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: brandColor,
-        brightness: Brightness.light,
-        primary: brandColor,
-        onPrimary: Colors.white,
-        primaryContainer: brandLight,
-        onPrimaryContainer: brandDark,
-        secondary: brandColor,
-        onSecondary: Colors.white,
-        tertiary: brandLight,
-      ),
-      useMaterial3: true,
-      pageTransitionsTheme: PageTransitionsTheme(
-        builders: {
-          TargetPlatform.iOS: CustomPageTransitionBuilder(),
-          TargetPlatform.android: CustomPageTransitionBuilder(),
-        },
-      ),
-    );
+    final theme = buildAppTheme();
 
     return MultiProvider(
       providers: [
+        ChangeNotifierProvider(create: (_) => SquareRuntimeConfig()..load()),
         ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => CatalogProvider()),
         ChangeNotifierProvider(create: (_) => BookingProvider()),
@@ -81,6 +83,10 @@ class _AppEntryPoint extends StatelessWidget {
           return const SplashScreen();
         }
         if (authProvider.isAuthenticated) {
+          final role = authProvider.currentUser?.role;
+          if (role == 'driver') {
+            return const DriverHomeScreen();
+          }
           return const HomeScreen();
         }
         return const AuthScreen();

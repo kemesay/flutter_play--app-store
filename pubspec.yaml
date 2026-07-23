@@ -1,7 +1,7 @@
 name: oda_black_car_service
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.3.7
+version: 0.4.0+1
 
 environment:
   sdk: ^3.5.3
@@ -34,6 +34,8 @@ dependencies:
   collection: ^1.18.0
   url_launcher: ^6.3.0
   geolocator_android: ^2.0.0
+  square_in_app_payments: ^1.7.12
+  socket_io_client: ^3.1.2
 
 dev_dependencies:
   flutter_test:

@@ -39,6 +39,7 @@ class DirectionsService {
   Future<DirectionsRoute?> fetchRoute({
     required LatLng origin,
     required LatLng destination,
+    List<LatLng> waypoints = const [],
     String mode = 'driving',
   }) async {
     final queryParameters = <String, String>{
@@ -48,6 +49,11 @@ class DirectionsService {
       'mode': mode,
       'key': Constatnts.API_KEY,
     };
+
+    if (waypoints.isNotEmpty) {
+      queryParameters['waypoints'] =
+          waypoints.map((w) => '${w.latitude},${w.longitude}').join('|');
+    }
 
     final uri = Uri.https(_endpoint, _directionsPath, queryParameters);
     final response = await _client.get(uri);
@@ -64,9 +70,18 @@ class DirectionsService {
     final firstRoute = routes.first as Map<String, dynamic>;
     final legs = firstRoute['legs'] as List<dynamic>? ?? const [];
     if (legs.isEmpty) return null;
-    final firstLeg = legs.first as Map<String, dynamic>;
-    final distance = firstLeg['distance'] as Map<String, dynamic>? ?? const {};
-    final duration = firstLeg['duration'] as Map<String, dynamic>? ?? const {};
+
+    // Sum all legs when waypoints are present
+    double totalDistanceMeters = 0;
+    double totalDurationSeconds = 0;
+    for (final rawLeg in legs) {
+      final leg = rawLeg as Map<String, dynamic>;
+      final d = leg['distance'] as Map<String, dynamic>? ?? const {};
+      final dur = leg['duration'] as Map<String, dynamic>? ?? const {};
+      totalDistanceMeters += (d['value'] as num?)?.toDouble() ?? 0;
+      totalDurationSeconds += (dur['value'] as num?)?.toDouble() ?? 0;
+    }
+
     final polylineData =
         firstRoute['overview_polyline'] as Map<String, dynamic>? ?? const {};
     final encoded = polylineData['points']?.toString();
@@ -76,15 +91,22 @@ class DirectionsService {
       points.addAll(_decodePolyline(encoded));
     }
 
-    final distanceValue = (distance['value'] as num?)?.toDouble() ?? 0;
-    final durationValue = (duration['value'] as num?)?.toDouble() ?? 0;
+    // Format total duration as human-readable text
+    final totalMins = (totalDurationSeconds / 60).round();
+    final hrs = totalMins ~/ 60;
+    final mins = totalMins % 60;
+    final durationText =
+        hrs > 0 ? '$hrs hr $mins min' : '$mins min';
+
+    final totalDistanceMiles = totalDistanceMeters / 1609.344;
+    final distanceText = '${totalDistanceMiles.toStringAsFixed(1)} mi';
 
     return DirectionsRoute(
-      distanceMeters: distanceValue,
-      durationSeconds: durationValue,
+      distanceMeters: totalDistanceMeters,
+      durationSeconds: totalDurationSeconds,
       polyline: points,
-      distanceText: distance['text']?.toString(),
-      durationText: duration['text']?.toString(),
+      distanceText: distanceText,
+      durationText: durationText,
     );
   }
 

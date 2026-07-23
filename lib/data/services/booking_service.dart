@@ -140,5 +140,14 @@ class BookingService {
 
     return bookings;
   }
+
+  /// Live status for hourly booking - readable by the booking owner.
+  Future<Map<String, dynamic>> getHourlyLiveStatus(int id) async {
+    final data = await _apiClient.get(
+      '/hourly-charter-books/$id/live-status',
+      authenticated: true,
+    );
+    return data as Map<String, dynamic>;
+  }
 }
 

@@ -57,10 +57,16 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
 
   PaymentMethodType _paymentMethod = PaymentMethodType.newCard;
   int? _selectedPaymentDetailId;
+  String? _selectedSquareCardId;
   CardDetails? _cardDetails;
+  SquarePaymentPayload? _squarePayload;
+  double? _squareTokenizedAtTotal;
   double? _routeDistanceInMiles;
   String? _routeDurationText;
   List<LatLng>? _routePolyline;
+
+  final List<PlaceDetail?> _sidePickDetails = [];
+  final List<TextEditingController> _sidePickControllers = [];
 
   @override
   void initState() {
@@ -91,6 +97,9 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     _pickupTimeFocusNode.dispose();
     _returnDateFocusNode.dispose();
     _returnTimeFocusNode.dispose();
+    for (final c in _sidePickControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -247,6 +256,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
                 routePolyline: _routePolyline,
                 routeDistance: routeDistance,
                 routeDuration: _routeDurationText,
+                waypoints: _sidePickDetails.whereType<PlaceDetail>().toList(),
               ),
             ),
           ),
@@ -280,8 +290,9 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   PlaceDetail? _airportPlaceDetail() => _airportLocationDetail;
 
   bool _isValidCaliforniaAirportSelection(PlaceDetail detail) {
-    if (!_isCaliforniaLocation(detail)) {
-      _showSnackbar('Airport/terminal pickup must be in California.');
+    if (!_isAllowedPickupState(detail)) {
+      _showSnackbar(
+          'Airport/terminal pickup must be in California or Washington.');
       return false;
     }
     return true;
@@ -320,12 +331,17 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   Future<void> _fetchRouteDistance() async {
     if (_airportLocationDetail == null || _accommodationDetail == null) return;
     try {
+      final waypoints = _sidePickDetails
+          .whereType<PlaceDetail>()
+          .map((d) => LatLng(d.lat, d.lng))
+          .toList();
       final route = await _directionsService.fetchRoute(
         origin: LatLng(_accommodationDetail!.lat, _accommodationDetail!.lng),
         destination: LatLng(
           _airportLocationDetail!.lat,
           _airportLocationDetail!.lng,
         ),
+        waypoints: waypoints,
       );
       if (mounted && route != null) {
         setState(() {
@@ -414,6 +430,23 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     );
     final pricingSubtitle =
         _buildAirportPricingSubtitle(effectiveDistance, effectivePreference);
+    final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
+    final consentReady = isBookingPaymentReadyForConsent(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
+    final consentHint = bookingPaymentConsentHint(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
 
     final vehicleClassOptions = _buildVehicleClassOptions(catalog.cars);
     final filteredCars = _filterCars(catalog.cars);
@@ -453,7 +486,8 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         children: [
           const _ProfessionalSectionHeader(
             title: '1. Pickup & Drop-off Locations',
-            subtitle: 'Airport pickup in California, drop-off across USA',
+            subtitle:
+                'Airport pickup in California or Washington, drop-off across USA',
           ),
           const SizedBox(height: 12),
           _LocationPickerField(
@@ -516,7 +550,78 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '2. Trip Type',
+            title: '2. Side Pick / Detour Stops',
+            subtitle: 'Add off-route detours — fare adjusts by distance',
+          ),
+          const SizedBox(height: 8),
+          ..._sidePickDetails.asMap().entries.map((entry) {
+            final idx = entry.key;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: _LocationPickerField(
+                      label: 'Detour stop ${idx + 1}',
+                      controller: _sidePickControllers[idx],
+                      placeService: _placeService,
+                      sessionToken: _sessionToken,
+                      onPlaceSelected: (detail) {
+                        setState(() {
+                          _sidePickDetails[idx] = detail;
+                        });
+                        _fetchRouteDistance();
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    onPressed: () {
+                      setState(() {
+                        _sidePickDetails.removeAt(idx);
+                        _sidePickControllers[idx].dispose();
+                        _sidePickControllers.removeAt(idx);
+                      });
+                      _fetchRouteDistance();
+                    },
+                    icon: const Icon(Icons.remove_circle_outline),
+                    color: Colors.red.shade400,
+                    tooltip: 'Remove stop',
+                  ),
+                ],
+              ),
+            );
+          }),
+          OutlinedButton.icon(
+            onPressed: () {
+              setState(() {
+                _sidePickDetails.add(null);
+                _sidePickControllers.add(TextEditingController());
+              });
+            },
+            icon: const Icon(Icons.add_location_alt_outlined),
+            label: const Text('Add Detour Stop'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFF59E0B),
+              side: const BorderSide(color: Color(0xFFF59E0B)),
+              minimumSize: const Size(double.infinity, 44),
+            ),
+          ),
+          if (_sidePickDetails.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Detour stops add extra driving distance — fare updates automatically.',
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(color: Colors.grey),
+              ),
+            ),
+          const SizedBox(height: 24),
+          const _ProfessionalSectionHeader(
+            title: '3. Trip Type',
             subtitle: 'Select your preferred journey',
           ),
           const SizedBox(height: 12),
@@ -562,7 +667,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           _buildRouteOverviewCard(straightDistance),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '3. Vehicle Selection',
+            title: '4. Vehicle Selection',
             subtitle: 'Choose your preferred vehicle',
           ),
           const SizedBox(height: 12),
@@ -673,7 +778,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '4. Pick & return time',
+            title: '5. Pick & return time',
             subtitle: 'Select your preferred timing',
           ),
           const SizedBox(height: 12),
@@ -735,7 +840,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '5. Airline info',
+            title: '6. Airline info',
             subtitle: 'Flight details for seamless coordination',
           ),
           const SizedBox(height: 12),
@@ -762,7 +867,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '6. Airport pickup preference',
+            title: '7. Airport pickup preference',
             subtitle: 'Curated options for your arrival experience',
           ),
           const SizedBox(height: 8),
@@ -824,7 +929,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
             ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '7. Additional stop on the way',
+            title: '8. Additional stop on the way',
             subtitle: 'Need an extra stop along the way?',
           ),
           const SizedBox(height: 8),
@@ -870,7 +975,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '8. Passenger info',
+            title: '9. Passenger info',
             subtitle: 'Who is taking this trip?',
           ),
           const SizedBox(height: 12),
@@ -935,7 +1040,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '9. Gratuity / Tip',
+            title: '10. Gratuity / Tip',
             subtitle: 'Show appreciation for excellent service',
           ),
           const SizedBox(height: 8),
@@ -957,20 +1062,38 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
             ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '10. Payment method',
+            title: '11. Payment method',
             subtitle: 'Secure payment options',
           ),
           const SizedBox(height: 8),
-          _PaymentMethodSection(
+          _BookingPaymentMethodPicker(
             paymentProvider: paymentProvider,
             paymentMethod: _paymentMethod,
             selectedPaymentDetailId: _selectedPaymentDetailId,
+            selectedSquareCardId: _selectedSquareCardId,
+            verifiedSquarePayload: _squarePayload,
+            squareTokenizedAtTotal: _squareTokenizedAtTotal,
+            bookingTotal: priceBreakdown?.total,
+            cardholderNameHint: _passengerNameController.text.trim(),
+            onSquareVerified: (payload, total) {
+              setState(() {
+                _squarePayload = payload;
+                _squareTokenizedAtTotal = total;
+              });
+            },
+            onSquareVerificationCleared: () {
+              setState(() {
+                _squarePayload = null;
+                _squareTokenizedAtTotal = null;
+                if (!consentReady) _agreedToTerms = false;
+              });
+            },
             onMethodChanged: (method) {
               setState(() {
                 _paymentMethod = method;
-                // Clear selections when switching methods
                 if (method != PaymentMethodType.existingCard) {
                   _selectedPaymentDetailId = null;
+                  _selectedSquareCardId = null;
                 }
                 if (method != PaymentMethodType.newCard) {
                   _cardDetails = null;
@@ -987,6 +1110,33 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
                 _cardDetails = card;
               });
             },
+            onSquareMethodChanged: (method) {
+              setState(() {
+                _paymentMethod = method;
+                if (method != PaymentMethodType.squareSavedCard) {
+                  _selectedPaymentDetailId = null;
+                  _selectedSquareCardId = null;
+                }
+                if (method != PaymentMethodType.squareNewCard) {
+                  _squarePayload = null;
+                  _squareTokenizedAtTotal = null;
+                }
+                _cardDetails = null;
+              });
+            },
+            onSquareSavedCardSelected: (card) {
+              setState(() {
+                applySquareSavedCardSelection(
+                  setPaymentMethod: (m) => _paymentMethod = m,
+                  setPaymentDetailId: (id) => _selectedPaymentDetailId = id,
+                  setSquareCardId: (id) => _selectedSquareCardId = id,
+                  setCardDetails: (c) => _cardDetails = c,
+                  setSquarePayload: (p) => _squarePayload = p,
+                  setSquareTokenizedAtTotal: (t) => _squareTokenizedAtTotal = t,
+                  card: card,
+                );
+              });
+            },
           ),
           if (priceBreakdown != null) ...[
             const SizedBox(height: 24),
@@ -997,17 +1147,46 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '11. Consent',
+            title: '12. Consent',
             subtitle: 'Review and confirm your booking',
           ),
+          if (consentHint != null) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      consentHint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           CheckboxListTile(
             value: _agreedToTerms,
             contentPadding: EdgeInsets.zero,
-            onChanged: (value) {
-              setState(() {
-                _agreedToTerms = value ?? false;
-              });
-            },
+            onChanged: consentReady
+                ? (value) {
+                    setState(() {
+                      _agreedToTerms = value ?? false;
+                    });
+                  }
+                : null,
             title: const Text(
               'I confirm the trip details above and authorize ODA Black Car Service to process payment for this booking.',
             ),
@@ -1430,23 +1609,66 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       _showSnackbar('Select gratuity preference.');
       return;
     }
-    if (_paymentMethod == PaymentMethodType.primaryCard) {
-      final primaryCard = context.read<PaymentProvider>().primaryCard;
-      if (primaryCard == null) {
-        _showSnackbar('You do not have a primary card on file.');
+    final catalog = context.read<CatalogProvider>();
+    final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+    final effectiveDistance = _routeDistanceInMiles ??
+        (_accommodationDetail != null && _airportLocationDetail != null
+            ? haversineDistanceInMiles(
+                startLat: _accommodationDetail!.lat,
+                startLng: _accommodationDetail!.lng,
+                endLat: _airportLocationDetail!.lat,
+                endLng: _airportLocationDetail!.lng,
+              )
+            : null);
+    final effectivePreference = _selectedPreference ??
+        (catalog.pickupPreferences.isNotEmpty
+            ? catalog.pickupPreferences.first
+            : null);
+    final bookingTotal = PricingCalculator.airport(
+      car: _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null,
+      distanceInMiles: effectiveDistance,
+      gratuity: _findGratuity(catalog, _selectedGratuityId),
+      isRoundTrip: _tripType.toLowerCase().contains('round trip'),
+      extraCatalog: catalog.extraOptions,
+      selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      additionalStop: _findAdditionalStop(catalog, _selectedAdditionalStopId),
+      pickupPreference: effectivePreference,
+    )?.total;
+
+    if (squareEnabled) {
+      final paymentError = validateBookingPaymentSelection(
+        paymentMethod: _paymentMethod,
+        paymentDetailId: _selectedPaymentDetailId,
+        squareCardId: _selectedSquareCardId,
+        cardDetails: _cardDetails,
+        primaryCard: context.read<PaymentProvider>().primaryCard,
+        squarePayload: _squarePayload,
+        squareTokenizedAtTotal: _squareTokenizedAtTotal,
+        currentBookingTotal: bookingTotal,
+        squareEnabled: true,
+      );
+      if (paymentError != null) {
+        _showSnackbar(paymentError);
         return;
       }
-      // PRIMARY_CARD should not include paymentDetailId - backend will use primary card automatically
-      _selectedPaymentDetailId = null;
-    } else if (_paymentMethod == PaymentMethodType.existingCard) {
-      if (_selectedPaymentDetailId == null) {
-        _showSnackbar('Select a saved card to proceed.');
+    } else {
+      if (_paymentMethod == PaymentMethodType.primaryCard) {
+        final primaryCard = context.read<PaymentProvider>().primaryCard;
+        if (primaryCard == null) {
+          _showSnackbar('You do not have a primary card on file.');
+          return;
+        }
+        _selectedPaymentDetailId = null;
+      } else if (_paymentMethod == PaymentMethodType.existingCard) {
+        if (_selectedPaymentDetailId == null) {
+          _showSnackbar('Select a saved card to proceed.');
+          return;
+        }
+      } else if (_paymentMethod == PaymentMethodType.newCard &&
+          _cardDetails == null) {
+        _showSnackbar('Provide payment card details.');
         return;
       }
-    } else if (_paymentMethod == PaymentMethodType.newCard &&
-        _cardDetails == null) {
-      _showSnackbar('Provide payment card details.');
-      return;
     }
     if (!_agreedToTerms) {
       _showSnackbar('Please confirm the booking details.');
@@ -1517,9 +1739,27 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       paymentDetailId: _selectedPaymentDetailId,
       cardDetails:
           _paymentMethod == PaymentMethodType.newCard ? _cardDetails : null,
+      square: _paymentMethod == PaymentMethodType.squareNewCard
+          ? _squarePayload
+          : null,
+      squareCardId: _paymentMethod == PaymentMethodType.squareSavedCard
+          ? _selectedSquareCardId
+          : null,
       specialInstructions: _instructionController.text.trim().isEmpty
           ? null
           : _instructionController.text.trim(),
+      sidePicks: _sidePickDetails
+          .whereType<PlaceDetail>()
+          .toList()
+          .asMap()
+          .entries
+          .map((e) => <String, dynamic>{
+                'address': e.value.formattedAddress,
+                'latitude': e.value.lat,
+                'longitude': e.value.lng,
+                'sortOrder': e.key,
+              })
+          .toList(),
     );
 
     final success = await bookingProvider.submitAirportBooking(
@@ -1528,7 +1768,10 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     );
     if (success && mounted) {
       CustomSnackbar.showSuccess(
-          context, 'Airport booking submitted. We will confirm shortly.');
+        context,
+        bookingProvider.successMessage ??
+            'Airport booking submitted. We will confirm shortly.',
+      );
       bookingProvider.clearMessages();
       _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {

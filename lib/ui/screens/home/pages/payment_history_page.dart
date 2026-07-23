@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/utils/payment_status_map.dart';
 import '../../../../data/models/booking_history_item.dart';
 import '../../../../providers/booking_provider.dart';
 import '../../../../core/utils/date_utils.dart';
@@ -71,7 +72,8 @@ class _PaymentCard extends StatelessWidget {
     final dateText = formatDateToPacific(payment.pickupDateTime);
 
     final statusColor = _getStatusColor(payment.paymentStatus, colorScheme);
-    final paymentMethodText = _formatPaymentMethod(payment.paymentMethod);
+    final paymentMethodText = formatPaymentMethodLabel(payment.paymentMethod);
+    final statusLabel = formatPaymentStatusLabel(payment.paymentStatus);
 
     return Card(
       shape: RoundedRectangleBorder(
@@ -116,7 +118,7 @@ class _PaymentCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    payment.paymentStatus,
+                    statusLabel,
                     style: TextStyle(
                       color: statusColor.foreground,
                       fontSize: 12,
@@ -208,44 +210,38 @@ class _PaymentCard extends StatelessWidget {
   }
 
   _StatusColor _getStatusColor(String status, ColorScheme colorScheme) {
-    switch (status) {
+    switch (status.toUpperCase()) {
       case 'PAID':
         return _StatusColor(
           colorScheme.secondaryContainer,
           colorScheme.onSecondaryContainer,
         );
+      case 'AUTHORIZED':
+        return const _StatusColor(Color(0xFFFFF3E0), Color(0xFFE65100));
       case 'AWAITING_PAYMENT':
       case 'PENDING':
+      case 'PENDING_APPROVAL':
         return _StatusColor(
           colorScheme.tertiaryContainer,
           colorScheme.onTertiaryContainer,
         );
       case 'NOT_PAID':
       case 'FAILED':
+      case 'CANCELLED':
         return _StatusColor(
           colorScheme.errorContainer,
           colorScheme.onErrorContainer,
+        );
+      case 'REFUNDED':
+        return _StatusColor(
+          colorScheme.surfaceContainerHighest,
+          colorScheme.onSurfaceVariant,
         );
       default:
         return _StatusColor(
           colorScheme.surfaceContainerHighest,
           colorScheme.onSurfaceVariant,
         );
-    }
-  }
-
-  String _formatPaymentMethod(String method) {
-    switch (method) {
-      case 'PRIMARY_CARD':
-        return 'Primary Card';
-      case 'EXISTING_CARD':
-        return 'Saved Card';
-      case 'NEW_CARD':
-        return 'New Card';
-      case 'CASH':
-        return 'Cash';
-      default:
-        return method.replaceAll('_', ' ').toTitleCase();
     }
   }
 }

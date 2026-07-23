@@ -5,7 +5,10 @@ import '../../../../providers/auth_provider.dart';
 import '../../../../providers/booking_provider.dart';
 import '../../../../providers/payment_provider.dart';
 import '../../../../data/models/booking_history_item.dart';
+import '../../../theme/app_tokens.dart';
+import '../../../widgets/field_widget.dart';
 import '../../auth/change_password_screen.dart';
+import '../../admin/admin_active_trips_screen.dart';
 import 'current_bookings_page.dart';
 import 'booking_history_page.dart';
 import 'payment_history_page.dart';
@@ -33,6 +36,8 @@ class _MyAccountPageState extends State<MyAccountPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final authProvider = context.watch<AuthProvider>();
+    final isAdmin = authProvider.currentUser?.role == 'admin';
     final bookingProvider = context.watch<BookingProvider>();
     final paymentProvider = context.watch<PaymentProvider>();
 
@@ -57,7 +62,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
         .length;
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(AppSpacing.md),
       children: [
         // Enhanced header with profile and actions
         Row(
@@ -89,14 +94,17 @@ class _MyAccountPageState extends State<MyAccountPage> {
                   ),
                 );
                 if (confirmed == true) {
+                  context.read<BookingProvider>().resetRealtimeState();
                   await context.read<AuthProvider>().logout();
                 }
               },
               icon: const Icon(Icons.logout, size: 18),
               label: const Text('Logout'),
               style: FilledButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.md,
+                  vertical: 12,
+                ),
               ),
             ),
           ],
@@ -105,7 +113,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
 
         // User Profile Header with profile image at the top
         _UserProfileHeader(paymentProvider: paymentProvider),
-        const SizedBox(height: 24),
+        const SizedBox(height: AppSpacing.lg),
 
         // Ride Statistics Section
         _RideStatisticsCard(
@@ -114,7 +122,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
           hourlyRides: hourlyRides,
           airportRides: airportRides,
         ),
-        const SizedBox(height: 24),
+        const SizedBox(height: AppSpacing.lg),
 
         // My Bookings Section
         _SectionCard(
@@ -152,7 +160,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
           ],
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
 
         // Payments Section
         _SectionCard(
@@ -188,7 +196,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
           ],
         ),
 
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
 
         // Account Management Section
         _SectionCard(
@@ -217,6 +225,29 @@ class _MyAccountPageState extends State<MyAccountPage> {
             ),
           ],
         ),
+
+        if (isAdmin) ...[
+          const SizedBox(height: AppSpacing.md),
+          _SectionCard(
+            title: 'Admin Panel',
+            icon: Icons.admin_panel_settings,
+            iconColor: const Color(0xFFF472B6),
+            children: [
+              _MenuItem(
+                title: 'Active Trips Control',
+                icon: Icons.speed,
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const AdminActiveTripsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -252,7 +283,7 @@ class _MyAccountPageState extends State<MyAccountPage> {
             Text(
               'This action cannot be undone. All your data will be permanently deleted, including:',
             ),
-            SizedBox(height: 8),
+            SizedBox(height: AppSpacing.sm),
             Text('• Your profile information'),
             Text('• Booking history'),
             Text('• Payment methods'),
@@ -392,10 +423,6 @@ class _UserProfileHeader extends StatelessWidget {
     final primaryCard = paymentProvider.primaryCard;
 
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -443,7 +470,7 @@ class _UserProfileHeader extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // User name
             Center(
@@ -454,12 +481,12 @@ class _UserProfileHeader extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: AppSpacing.xs),
 
             // Membership status
             Center(
               child: Text(
-                'Member since January 2024',
+                'Member since ${_formatMemberSince(user?.createdAt)}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
@@ -478,29 +505,29 @@ class _UserProfileHeader extends StatelessWidget {
             const SizedBox(height: 12),
 
             // Full Name
-            _ProfileInfoRow(
+            Field(
               label: 'Full Name',
               value: user?.fullName ?? 'Not provided',
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // Phone
-            _ProfileInfoRow(
+            Field(
               label: 'Phone',
               value: user?.phoneNumber ?? 'Not provided',
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // Email
-            _ProfileInfoRow(
+            Field(
               label: 'Email',
               value: user?.email ?? 'Not provided',
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
 
             // Preferred Payment
             if (primaryCard != null)
-              _ProfileInfoRow(
+              Field(
                 label: 'Preferred Payment',
                 value: '${primaryCard.maskedCardNumber} '
                     '(${primaryCard.expirationDate})',
@@ -510,42 +537,24 @@ class _UserProfileHeader extends StatelessWidget {
       ),
     );
   }
-}
 
-class _ProfileInfoRow extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const _ProfileInfoRow({
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            '$label:',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            value,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ),
-      ],
-    );
+  static String _formatMemberSince(DateTime? createdAt) {
+    if (createdAt == null) return '—';
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${months[createdAt.month - 1]} ${createdAt.year}';
   }
 }
 
@@ -568,10 +577,6 @@ class _RideStatisticsCard extends StatelessWidget {
     final colorScheme = theme.colorScheme;
 
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -584,14 +589,14 @@ class _RideStatisticsCard extends StatelessWidget {
                 color: colorScheme.primary,
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
 
             // Total Summary
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(AppSpacing.md),
               decoration: BoxDecoration(
                 color: colorScheme.primary.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(AppRadius.lg),
               ),
               child: Row(
                 children: [
@@ -599,14 +604,14 @@ class _RideStatisticsCard extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: colorScheme.primary,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(AppRadius.md),
                     ),
                     child: const Icon(
                       Icons.list,
                       color: Colors.white,
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  const SizedBox(width: AppSpacing.md),
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -691,15 +696,15 @@ class _RideStatCard extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
       ),
       child: Column(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(AppSpacing.sm),
             decoration: BoxDecoration(
               color: color,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(AppRadius.sm),
             ),
             child: Icon(
               icon,
@@ -707,7 +712,7 @@ class _RideStatCard extends StatelessWidget {
               size: 20,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             '$count',
             style: theme.textTheme.titleMedium?.copyWith(
@@ -745,22 +750,18 @@ class _SectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-      ),
-      elevation: 2,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.all(AppSpacing.sm),
                   decoration: BoxDecoration(
                     color: iconColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
                   ),
                   child: Icon(icon, color: iconColor, size: 24),
                 ),
@@ -814,7 +815,7 @@ class _MenuItem extends StatelessWidget {
           : const Icon(Icons.chevron_right),
       onTap: onTap,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(AppRadius.md),
       ),
     );
   }

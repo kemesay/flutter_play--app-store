@@ -2,6 +2,14 @@ import '../models/booking_history_item.dart';
 import '../models/selected_extra_option.dart';
 import '../../model/place_model.dart';
 
+/// Best-effort US state code parsed from a Google-style formatted address
+/// (e.g. "123 Main St, Seattle, WA 98101, USA"), since the backend only
+/// stores the address string, not a structured state field.
+final _stateCodePattern = RegExp(r',\s*([A-Z]{2})\s+\d{5}');
+String? _extractStateShortName(String formattedAddress) {
+  return _stateCodePattern.firstMatch(formattedAddress)?.group(1);
+}
+
 /// Editable snapshot built from GET `/users/bookings/mine` item payloads.
 class BookingEditFormData {
   BookingEditFormData({
@@ -98,7 +106,8 @@ class BookingEditFormData {
       lat: airportLocationLatitude!,
       lng: airportLocationLongitude!,
       countryCode: 'US',
-      administrativeAreaShortName: 'CA',
+      administrativeAreaShortName:
+          _extractStateShortName(airportLocationAddress!),
     );
   }
 
@@ -128,13 +137,15 @@ class BookingEditFormData {
       lat: pickupLatitude!,
       lng: pickupLongitude!,
       countryCode: 'US',
-      administrativeAreaShortName: 'CA',
+      administrativeAreaShortName: _extractStateShortName(address),
     );
   }
 
   PlaceDetail? get dropoffPlaceDetail {
     final address = dropoffPhysicalAddress;
-    if (address == null || dropoffLatitude == null || dropoffLongitude == null) {
+    if (address == null ||
+        dropoffLatitude == null ||
+        dropoffLongitude == null) {
       return null;
     }
     return PlaceDetail(
@@ -147,8 +158,7 @@ class BookingEditFormData {
   }
 
   bool get isRoundTrip =>
-      tripType.toLowerCase().contains('round trip') ||
-      tripType == 'Round-Trip';
+      tripType.toLowerCase().contains('round trip') || tripType == 'Round-Trip';
 }
 
 class BookingUpdateMapper {

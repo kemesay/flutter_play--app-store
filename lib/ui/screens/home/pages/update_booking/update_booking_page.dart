@@ -19,6 +19,10 @@ import 'package:oda_black_car_service/data/services/place_service.dart';
 import 'package:oda_black_car_service/model/place_model.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
 import 'package:oda_black_car_service/providers/catalog_provider.dart';
+import 'package:oda_black_car_service/ui/theme/app_tokens.dart';
+import 'package:oda_black_car_service/ui/widgets/app_card.dart';
+import 'package:oda_black_car_service/ui/widgets/app_primary_button.dart';
+import 'package:oda_black_car_service/ui/widgets/app_section_header.dart';
 import 'package:oda_black_car_service/ui/widgets/booking_route_preview_map.dart';
 import 'package:oda_black_car_service/ui/widgets/custom_snackbar.dart';
 import 'package:oda_black_car_service/ui/widgets/extra_options_selector.dart';
@@ -140,9 +144,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       text: _initial.additionalStopDescription ?? '',
     );
     _selectedExtras.addAll(_initial.extraOptions);
-    _initialExtraOptionIds = _initial.extraOptions
-        .map((e) => e.extraOptionId)
-        .toSet();
+    _initialExtraOptionIds =
+        _initial.extraOptions.map((e) => e.extraOptionId).toSet();
     _bookedTripTotalFee = widget.booking.totalFee;
     _initialGratuityPercentage = _parseGratuityPercentage(
       widget.booking.rawData['Gratuity'],
@@ -183,7 +186,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     super.dispose();
   }
 
-  bool get _isRoundTrip => _tripType.toLowerCase().contains('round trip') ||
+  bool get _isRoundTrip =>
+      _tripType.toLowerCase().contains('round trip') ||
       _tripType == 'Round-Trip';
 
   int get _resolvedHours {
@@ -343,8 +347,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     }
 
     final distance = _distanceInMiles ?? _initial.distanceInMiles ?? 0;
-    if (widget.booking.type != BookingType.hourlyCharter &&
-        distance <= 0) {
+    if (widget.booking.type != BookingType.hourlyCharter && distance <= 0) {
       CustomSnackbar.show(context, 'Unable to calculate trip distance.');
       return;
     }
@@ -377,8 +380,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       CustomSnackbar.show(context, 'Select airport from suggestions.');
       return false;
     }
-    if (!_isCalifornia(_airportDetail!)) {
-      CustomSnackbar.show(context, 'Airport pickup must be in California.');
+    if (!_isAllowedPickupState(_airportDetail!)) {
+      CustomSnackbar.show(
+          context, 'Airport pickup must be in California or Washington.');
       return false;
     }
     if (!_isUnitedStates(_accommodationDetail!)) {
@@ -402,9 +406,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       accommodationLongitude: _accommodationDetail!.lng,
       accommodationLatitude: _accommodationDetail!.lat,
       pickupDateTime: _formatApiDateTime(_pickupDateTime),
-      returnPickupDateTime: _returnDateTime != null
-          ? _formatApiDateTime(_returnDateTime!)
-          : null,
+      returnPickupDateTime:
+          _returnDateTime != null ? _formatApiDateTime(_returnDateTime!) : null,
       airline: _airlineController.text.trim(),
       arrivalFlightNumber: _arrivalFlightController.text.trim(),
       returnAirline: _returnAirlineController.text.trim(),
@@ -412,9 +415,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       distanceInMiles: _distanceInMiles ?? _initial.distanceInMiles ?? 0,
       carId: _selectedCarId!,
       additionalStopId: _hasAdditionalStop ? _additionalStopId : null,
-      additionalStopOnTheWayDescription: _hasAdditionalStop
-          ? _additionalStopDescController.text.trim()
-          : null,
+      additionalStopOnTheWayDescription:
+          _hasAdditionalStop ? _additionalStopDescController.text.trim() : null,
       pickupPreferenceId: _pickupPreferenceId,
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
       bookingFor: _bookingFor,
@@ -430,11 +432,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
 
   Future<bool> _savePointToPoint(BookingProvider provider) async {
     if (_pickupDetail == null || _dropoffDetail == null) {
-      CustomSnackbar.show(context, 'Select pickup and drop-off from suggestions.');
+      CustomSnackbar.show(
+          context, 'Select pickup and drop-off from suggestions.');
       return false;
     }
-    if (!_isCalifornia(_pickupDetail!)) {
-      CustomSnackbar.show(context, 'Pickup must be in California.');
+    if (!_isAllowedPickupState(_pickupDetail!)) {
+      CustomSnackbar.show(
+          context, 'Pickup must be in California or Washington.');
       return false;
     }
 
@@ -462,9 +466,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       passengerEmail: _passengerEmailController.text.trim(),
       passengerCellPhone: _passengerPhoneController.text.trim(),
       additionalStopId: _hasAdditionalStop ? _additionalStopId : null,
-      additionalStopOnTheWayDescription: _hasAdditionalStop
-          ? _additionalStopDescController.text.trim()
-          : null,
+      additionalStopOnTheWayDescription:
+          _hasAdditionalStop ? _additionalStopDescController.text.trim() : null,
       carId: _selectedCarId!,
       gratuityId: _selectedGratuityId!,
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
@@ -475,11 +478,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
 
   Future<bool> _saveHourly(BookingProvider provider) async {
     if (_pickupDetail == null || _dropoffDetail == null) {
-      CustomSnackbar.show(context, 'Select pickup and drop-off from suggestions.');
+      CustomSnackbar.show(
+          context, 'Select pickup and drop-off from suggestions.');
       return false;
     }
-    if (!_isCalifornia(_pickupDetail!)) {
-      CustomSnackbar.show(context, 'Pickup must be in California.');
+    if (!_isAllowedPickupState(_pickupDetail!)) {
+      CustomSnackbar.show(
+          context, 'Pickup must be in California or Washington.');
       return false;
     }
 
@@ -537,24 +542,11 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                     child: SizedBox(
                       width: double.infinity,
-                      child: FilledButton.icon(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _brandGreen,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        onPressed:
-                            bookingProvider.isSubmitting ? null : _save,
-                        icon: bookingProvider.isSubmitting
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_outlined),
-                        label: const Text('Update changes'),
+                      child: AppPrimaryButton(
+                        label: 'Update changes',
+                        onPressed: _save,
+                        isLoading: bookingProvider.isSubmitting,
+                        icon: Icons.save_outlined,
                       ),
                     ),
                   ),
@@ -569,31 +561,31 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _infoBanner(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         if (widget.booking.type == BookingType.airport) ...[
           _buildAirportLocations(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           _buildAirportTripType(),
         ] else if (widget.booking.type == BookingType.pointToPoint) ...[
           _buildP2PLocations(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           _buildP2PTripType(),
         ] else ...[
           _buildHourlyLocations(),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           _buildHourlyOptions(),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildRoutePreviewSection(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildPassengerCounters(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildScheduleSection(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         if (widget.booking.type == BookingType.airport) _buildAirlineSection(),
         if (widget.booking.type != BookingType.hourlyCharter) ...[
           _buildAdditionalStopSection(catalog),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           if (catalog.extraOptions.isNotEmpty)
             ExtraOptionsSelector(
               extraOptions: catalog.extraOptions,
@@ -607,7 +599,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
               }),
             ),
         ],
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _UpdateVehiclePicker(
           cars: catalog.cars,
           selectedCarId: _selectedCarId,
@@ -620,13 +612,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           formatMoney: _formatMoney,
           onSelect: (id) => setState(() => _selectedCarId = id),
         ),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildGratuitySection(catalog),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildPriceSummary(catalog),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildPassengerSection(),
-        const SizedBox(height: 16),
+        const SizedBox(height: AppSpacing.md),
         _buildInstructionsField(),
       ],
     );
@@ -699,9 +691,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             icon: Icons.trip_origin,
             color: Colors.blue,
             label: _routePickupLabel,
-            value: pickupAddress.isNotEmpty
-                ? pickupAddress
-                : 'Not set',
+            value: pickupAddress.isNotEmpty ? pickupAddress : 'Not set',
           ),
           const SizedBox(height: 6),
           _RouteEndpointRow(
@@ -720,7 +710,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             isLoading: _isRouteLoading,
             pickupLabel: _routePickupLabel,
             dropoffLabel: _routeDropoffLabel,
-            height: widget.booking.type == BookingType.hourlyCharter ? 260 : 220,
+            height:
+                widget.booking.type == BookingType.hourlyCharter ? 260 : 220,
           ),
         ],
       ),
@@ -768,10 +759,10 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             _refreshRoutePreview();
           },
           onPlaceSelected: (detail) {
-            if (!_isCalifornia(detail)) {
+            if (!_isAllowedPickupState(detail)) {
               CustomSnackbar.show(
                 context,
-                'Airport/terminal pickup must be in California.',
+                'Airport/terminal pickup must be in California or Washington.',
               );
               return;
             }
@@ -837,7 +828,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       children: [
         _sectionTitle('Pickup & drop-off'),
         LocationPickerField(
-          label: 'Pickup location (California)',
+          label: 'Pickup location (California or Washington)',
           controller: _pickupController,
           placeService: _placeService,
           sessionToken: _sessionToken,
@@ -847,8 +838,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             _refreshRoutePreview();
           },
           onPlaceSelected: (detail) {
-            if (!_isCalifornia(detail)) {
-              CustomSnackbar.show(context, 'Pickup must be in California.');
+            if (!_isAllowedPickupState(detail)) {
+              CustomSnackbar.show(
+                  context, 'Pickup must be in California or Washington.');
               return;
             }
             setState(() => _pickupDetail = detail);
@@ -969,11 +961,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
   Widget _buildPassengerCounters() {
     return Row(
       children: [
-        Expanded(child: _counterTile('Passengers', _passengers, 0, 14, (v) {
+        Expanded(
+            child: _counterTile('Passengers', _passengers, 0, 14, (v) {
           setState(() => _passengers = v);
         })),
         const SizedBox(width: 12),
-        Expanded(child: _counterTile('Suitcases', _suitcases, 0, 14, (v) {
+        Expanded(
+            child: _counterTile('Suitcases', _suitcases, 0, 14, (v) {
           setState(() => _suitcases = v);
         })),
       ],
@@ -987,12 +981,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     int max,
     ValueChanged<int> onChanged,
   ) {
-    return Container(
+    return AppCard(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
       child: Column(
         children: [
           Text(
@@ -1002,7 +992,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: AppSpacing.xs),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             mainAxisSize: MainAxisSize.min,
@@ -1012,7 +1002,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: value > min ? () => onChanged(value - 1) : null,
-                icon: const Icon(Icons.remove_circle_outline, color: _brandGreen),
+                icon:
+                    const Icon(Icons.remove_circle_outline, color: _brandGreen),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -1043,7 +1034,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Pickup date & time'),
-          subtitle: Text(DateFormat('MMM d, yyyy · h:mm a').format(_pickupDateTime)),
+          subtitle:
+              Text(DateFormat('MMM d, yyyy · h:mm a').format(_pickupDateTime)),
           trailing: const Icon(Icons.calendar_today, color: _brandGreen),
           onTap: () async {
             final date = await showDatePicker(
@@ -1090,7 +1082,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
               final time = await showTimePicker(
                 context: context,
                 initialTime: TimeOfDay.fromDateTime(
-                  _returnDateTime ?? _pickupDateTime.add(const Duration(hours: 1)),
+                  _returnDateTime ??
+                      _pickupDateTime.add(const Duration(hours: 1)),
                 ),
               );
               if (time == null || !mounted) return;
@@ -1118,21 +1111,23 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           controller: _airlineController,
           decoration: const InputDecoration(labelText: 'Airline (arrival)'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: _arrivalFlightController,
-          decoration: const InputDecoration(labelText: 'Flight number (arrival)'),
+          decoration:
+              const InputDecoration(labelText: 'Flight number (arrival)'),
         ),
         if (_requiresReturn) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           TextField(
             controller: _returnAirlineController,
             decoration: const InputDecoration(labelText: 'Airline (return)'),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           TextField(
             controller: _returnFlightController,
-            decoration: const InputDecoration(labelText: 'Flight number (return)'),
+            decoration:
+                const InputDecoration(labelText: 'Flight number (return)'),
           ),
         ],
       ],
@@ -1233,9 +1228,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     GratuityModel? gratuity,
   }) {
     final vehicle = car ??
-        (_selectedCarId != null
-            ? catalog.findCarById(_selectedCarId!)
-            : null);
+        (_selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null);
     final GratuityModel? gratuityModel = gratuity ??
         catalog.gratuities
             .where((g) => g.gratuityId == _selectedGratuityId)
@@ -1281,9 +1274,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
   }
 
   Widget _buildGratuitySection(CatalogProvider catalog) {
-    final car = _selectedCarId != null
-        ? catalog.findCarById(_selectedCarId!)
-        : null;
+    final car =
+        _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final breakdown = _tripBreakdown(catalog, car: car, gratuity: null);
     final baseFare = breakdown?.baseFare ?? 0;
     final bookedTotal = _bookedTripTotalFee;
@@ -1373,7 +1365,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             'Estimated service fee',
             style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Text(
             '\$${breakdown.total.toStringAsFixed(2)} ${breakdown.currency}',
             style: const TextStyle(
@@ -1428,13 +1420,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           controller: _passengerNameController,
           decoration: const InputDecoration(labelText: 'Full name'),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: _passengerEmailController,
           decoration: const InputDecoration(labelText: 'Email'),
           keyboardType: TextInputType.emailAddress,
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: AppSpacing.sm),
         TextField(
           controller: _passengerPhoneController,
           decoration: const InputDecoration(labelText: 'Phone'),
@@ -1456,15 +1448,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
 
   Widget _sectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w700,
-          color: _brandGreen,
-        ),
-      ),
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: AppSectionHeader(title: title),
     );
   }
 }
@@ -1512,20 +1497,13 @@ class _UpdateVehiclePicker extends StatelessWidget {
       return car.maxPassengers >= passengers && car.maxSuitcases >= suitcases;
     }).toList();
 
-  final displayCars = eligible.isEmpty ? cars : eligible;
+    final displayCars = eligible.isEmpty ? cars : eligible;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Vehicle',
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: _brandGreen,
-          ),
-        ),
-        const SizedBox(height: 8),
+        const AppSectionHeader(title: 'Vehicle'),
+        const SizedBox(height: AppSpacing.sm),
         SizedBox(
           height: 258,
           child: ListView.separated(
@@ -1708,7 +1686,7 @@ class _RouteEndpointRow extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 18, color: color),
-        const SizedBox(width: 8),
+        const SizedBox(width: AppSpacing.sm),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1735,10 +1713,13 @@ class _RouteEndpointRow extends StatelessWidget {
   }
 }
 
-bool _isCalifornia(PlaceDetail detail) {
-  final state = detail.administrativeAreaShortName?.toUpperCase();
-  if (state == 'CA' && _isUnitedStates(detail)) return true;
+bool _isAllowedPickupState(PlaceDetail detail) {
   if (!_isUnitedStates(detail)) return false;
+  final state = detail.administrativeAreaShortName?.toUpperCase();
+  if (state == 'CA' || state == 'WA') return true;
   final address = detail.formattedAddress.toLowerCase();
-  return address.contains(', ca') || address.contains('california');
+  return address.contains(', ca') ||
+      address.contains('california') ||
+      address.contains(', wa') ||
+      address.contains('washington');
 }

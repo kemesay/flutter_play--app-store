@@ -1,7 +1,7 @@
 part of 'package:oda_black_car_service/ui/screens/home/pages/book_ride/book_ride_page.dart';
 
 class _HourlyCharterForm extends StatefulWidget {
-  const _HourlyCharterForm();
+  const _HourlyCharterForm({super.key});
 
   @override
   State<_HourlyCharterForm> createState() => _HourlyCharterFormState();
@@ -89,7 +89,8 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
   PlaceDetail? _pickupDetail;
   PlaceDetail? _dropoffDetail;
   DateTime? _pickupDateTime;
-  int _selectedHours = 5;
+  int _selectedHours = 4;
+  HourlyBillingMode _billingMode = HourlyBillingMode.preBooked;
   int _passengers = 1;
   int _suitcases = 0;
   int? _selectedCarId;
@@ -107,7 +108,10 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
 
   PaymentMethodType _paymentMethod = PaymentMethodType.newCard;
   int? _selectedPaymentDetailId;
+  String? _selectedSquareCardId;
   CardDetails? _cardDetails;
+  SquarePaymentPayload? _squarePayload;
+  double? _squareTokenizedAtTotal;
 
   TimeOfDay? get _pickupTimeOfDay => _pickupDateTime != null
       ? TimeOfDay(hour: _pickupDateTime!.hour, minute: _pickupDateTime!.minute)
@@ -181,6 +185,23 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     );
     final pricingSubtitle =
         'Duration: $_selectedHours hour${_selectedHours == 1 ? '' : 's'}';
+    final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
+    final consentReady = isBookingPaymentReadyForConsent(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
+    final consentHint = bookingPaymentConsentHint(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
 
     final vehicleClassOptions = _buildVehicleClassOptions(catalog.cars);
     final filteredCars = _filterCars(catalog.cars);
@@ -248,8 +269,6 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
               }
             },
           ),
-          const SizedBox(height: 16),
-          plannerCard,
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
             title: '2. Trip type & duration',
@@ -280,6 +299,13 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
               }
             },
           ),
+          const SizedBox(height: 16),
+          _BillingModeSelector(
+            value: _billingMode,
+            onChanged: (mode) => setState(() => _billingMode = mode),
+          ),
+          const SizedBox(height: 16),
+          plannerCard,
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
             title: '3. Choose vehicle',
@@ -558,16 +584,34 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             subtitle: 'Secure payment options',
           ),
           const SizedBox(height: 8),
-          _PaymentMethodSection(
+          _BookingPaymentMethodPicker(
             paymentProvider: paymentProvider,
             paymentMethod: _paymentMethod,
             selectedPaymentDetailId: _selectedPaymentDetailId,
+            selectedSquareCardId: _selectedSquareCardId,
+            verifiedSquarePayload: _squarePayload,
+            squareTokenizedAtTotal: _squareTokenizedAtTotal,
+            bookingTotal: priceBreakdown?.total,
+            cardholderNameHint: _passengerNameController.text.trim(),
+            onSquareVerified: (payload, total) {
+              setState(() {
+                _squarePayload = payload;
+                _squareTokenizedAtTotal = total;
+              });
+            },
+            onSquareVerificationCleared: () {
+              setState(() {
+                _squarePayload = null;
+                _squareTokenizedAtTotal = null;
+                if (!consentReady) _agreedToTerms = false;
+              });
+            },
             onMethodChanged: (method) {
               setState(() {
                 _paymentMethod = method;
-                // Clear selections when switching methods
                 if (method != PaymentMethodType.existingCard) {
                   _selectedPaymentDetailId = null;
+                  _selectedSquareCardId = null;
                 }
                 if (method != PaymentMethodType.newCard) {
                   _cardDetails = null;
@@ -584,6 +628,33 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
                 _cardDetails = card;
               });
             },
+            onSquareMethodChanged: (method) {
+              setState(() {
+                _paymentMethod = method;
+                if (method != PaymentMethodType.squareSavedCard) {
+                  _selectedPaymentDetailId = null;
+                  _selectedSquareCardId = null;
+                }
+                if (method != PaymentMethodType.squareNewCard) {
+                  _squarePayload = null;
+                  _squareTokenizedAtTotal = null;
+                }
+                _cardDetails = null;
+              });
+            },
+            onSquareSavedCardSelected: (card) {
+              setState(() {
+                applySquareSavedCardSelection(
+                  setPaymentMethod: (m) => _paymentMethod = m,
+                  setPaymentDetailId: (id) => _selectedPaymentDetailId = id,
+                  setSquareCardId: (id) => _selectedSquareCardId = id,
+                  setCardDetails: (c) => _cardDetails = c,
+                  setSquarePayload: (p) => _squarePayload = p,
+                  setSquareTokenizedAtTotal: (t) => _squareTokenizedAtTotal = t,
+                  card: card,
+                );
+              });
+            },
           ),
           if (priceBreakdown != null) ...[
             const SizedBox(height: 24),
@@ -597,15 +668,44 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             title: '9. Confirmation',
             subtitle: 'Review and confirm your booking',
           ),
+          if (consentHint != null) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline,
+                    size: 20,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      consentHint,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           _StyledCheckbox(
             title:
                 'I confirm the trip details and authorize ODA Black Car Service to process payment for this booking.',
             value: _agreedToTerms,
-            onChanged: (value) {
-              setState(() {
-                _agreedToTerms = value ?? false;
-              });
-            },
+            onChanged: consentReady
+                ? (value) {
+                    setState(() {
+                      _agreedToTerms = value ?? false;
+                    });
+                  }
+                : null,
           ),
           if (bookingProvider.successMessage != null)
             Container(
@@ -770,7 +870,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Hourly Charter',
+                      'Journey snapshot',
                       style: theme.textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.w700,
                       ),
@@ -1012,10 +1112,11 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
   }
 
   bool _validateCaliforniaPickup(PlaceDetail detail) {
-    if (_isCaliforniaLocation(detail)) {
+    if (_isAllowedPickupState(detail)) {
       return true;
     }
-    _showSnackbar('Pickup location must be within California, USA.');
+    _showSnackbar(
+        'Pickup location must be within California or Washington, USA.');
     return false;
   }
 
@@ -1065,23 +1166,50 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       _showSnackbar('Select gratuity preference.');
       return;
     }
-    if (_paymentMethod == PaymentMethodType.primaryCard) {
-      final primaryCard = context.read<PaymentProvider>().primaryCard;
-      if (primaryCard == null) {
-        _showSnackbar('You do not have a primary card on file.');
+    final catalog = context.read<CatalogProvider>();
+    final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+    final bookingTotal = PricingCalculator.hourlyCharter(
+      car: _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null,
+      selectedHours: _selectedHours,
+      gratuity: _findGratuity(catalog, _selectedGratuityId),
+      extraCatalog: catalog.extraOptions,
+      selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+    )?.total;
+
+    if (squareEnabled) {
+      final paymentError = validateBookingPaymentSelection(
+        paymentMethod: _paymentMethod,
+        paymentDetailId: _selectedPaymentDetailId,
+        squareCardId: _selectedSquareCardId,
+        cardDetails: _cardDetails,
+        primaryCard: context.read<PaymentProvider>().primaryCard,
+        squarePayload: _squarePayload,
+        squareTokenizedAtTotal: _squareTokenizedAtTotal,
+        currentBookingTotal: bookingTotal,
+        squareEnabled: true,
+      );
+      if (paymentError != null) {
+        _showSnackbar(paymentError);
         return;
       }
-      // PRIMARY_CARD should not include paymentDetailId - backend will use primary card automatically
-      _selectedPaymentDetailId = null;
-    } else if (_paymentMethod == PaymentMethodType.existingCard) {
-      if (_selectedPaymentDetailId == null) {
-        _showSnackbar('Select a saved card to proceed.');
+    } else {
+      if (_paymentMethod == PaymentMethodType.primaryCard) {
+        final primaryCard = context.read<PaymentProvider>().primaryCard;
+        if (primaryCard == null) {
+          _showSnackbar('You do not have a primary card on file.');
+          return;
+        }
+        _selectedPaymentDetailId = null;
+      } else if (_paymentMethod == PaymentMethodType.existingCard) {
+        if (_selectedPaymentDetailId == null) {
+          _showSnackbar('Select a saved card to proceed.');
+          return;
+        }
+      } else if (_paymentMethod == PaymentMethodType.newCard &&
+          _cardDetails == null) {
+        _showSnackbar('Provide payment card details.');
         return;
       }
-    } else if (_paymentMethod == PaymentMethodType.newCard &&
-        _cardDetails == null) {
-      _showSnackbar('Provide payment card details.');
-      return;
     }
     if (_hasItineraryNotes && _itineraryNotesController.text.trim().isEmpty) {
       _showSnackbar('Describe the additional stops.');
@@ -1121,6 +1249,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       dropoffLatitude: _dropoffDetail!.lat,
       pickupDateTime: dateFormatter.format(_pickupDateTime!),
       selectedHours: _selectedHours,
+      billingMode: _billingMode,
       occasion: _selectedOccasion,
       specialInstructions:
           instructions.isEmpty ? null : instructions.join('\n\n'),
@@ -1138,6 +1267,12 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       paymentDetailId: _selectedPaymentDetailId,
       cardDetails:
           _paymentMethod == PaymentMethodType.newCard ? _cardDetails : null,
+      square: _paymentMethod == PaymentMethodType.squareNewCard
+          ? _squarePayload
+          : null,
+      squareCardId: _paymentMethod == PaymentMethodType.squareSavedCard
+          ? _selectedSquareCardId
+          : null,
     );
 
     final success = await bookingProvider.submitHourlyCharterBooking(
@@ -1145,7 +1280,10 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       authenticated: true,
     );
     if (success && mounted) {
-      CustomSnackbar.showSuccess(context, 'Hourly charter request submitted.');
+      CustomSnackbar.showSuccess(
+        context,
+        bookingProvider.successMessage ?? 'Hourly charter request submitted.',
+      );
       bookingProvider.clearMessages();
       _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {
@@ -1211,6 +1349,183 @@ class _HourlyMetricPill extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+// ─── Billing Mode Toggle Widget ──────────────────────────────────────────────
+
+class _BillingModeSelector extends StatelessWidget {
+  const _BillingModeSelector({
+    required this.value,
+    required this.onChanged,
+  });
+
+  final HourlyBillingMode value;
+  final ValueChanged<HourlyBillingMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Billing Mode',
+              style: theme.textTheme.labelMedium?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.5,
+                color: theme.colorScheme.onSurface.withOpacity(0.7),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Tooltip(
+              message:
+                  'Fixed Booking: you pay for exactly the hours you booked.\n'
+                  'Live Meter: card is pre-authorized for booked hours + 2 hr buffer. '
+                  'Your booked hours are a minimum charge — extra time is billed '
+                  'at the same normal hourly rate when the driver ends the trip.',
+              child: Icon(
+                Icons.info_outline,
+                size: 15,
+                color: theme.colorScheme.onSurface.withOpacity(0.4),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surfaceContainerHighest.withOpacity(0.35),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: theme.colorScheme.outline.withOpacity(0.12),
+            ),
+          ),
+          padding: const EdgeInsets.all(4),
+          child: Row(
+            children: HourlyBillingMode.values.map((mode) {
+              final active = value == mode;
+              final isLive = mode == HourlyBillingMode.live;
+              final activeColor =
+                  isLive ? const Color(0xFFF59E0B) : const Color(0xFF03930A);
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => onChanged(mode),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 10, horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: active
+                          ? (isLive
+                              ? const Color(0xFFFEF3C7)
+                              : const Color(0xFFF0FDF4))
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: active
+                            ? activeColor.withOpacity(0.4)
+                            : Colors.transparent,
+                        width: 1.5,
+                      ),
+                      boxShadow: active
+                          ? [
+                              BoxShadow(
+                                color: activeColor.withOpacity(0.12),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              )
+                            ]
+                          : [],
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          isLive
+                              ? Icons.speed_outlined
+                              : Icons.lock_clock_outlined,
+                          size: 18,
+                          color: active
+                              ? activeColor
+                              : theme.colorScheme.onSurface.withOpacity(0.4),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                isLive ? 'Live Meter' : 'Fixed Booking',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  color: active
+                                      ? activeColor
+                                      : theme.colorScheme.onSurface
+                                          .withOpacity(0.5),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              Text(
+                                isLive ? 'Pay actual time' : 'Pay booked hours',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  fontSize: 10,
+                                  color: active
+                                      ? activeColor.withOpacity(0.7)
+                                      : theme.colorScheme.onSurface
+                                          .withOpacity(0.3),
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        if (value == HourlyBillingMode.live) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: const Color(0xFFF59E0B).withOpacity(0.35),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.speed_outlined,
+                    size: 14, color: Color(0xFFF59E0B)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Card pre-authorized for booked hours + 2 hr buffer. '
+                    'Actual charge set when driver ends the trip. '
+                    'Booked hours are a minimum charge; extra time is billed '
+                    'at the same normal hourly rate.',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontSize: 11,
+                      color: Colors.black.withOpacity(0.6),
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
     );
   }
 }

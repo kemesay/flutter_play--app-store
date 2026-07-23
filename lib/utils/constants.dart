@@ -1,9 +1,10 @@
-import 'package:flutter/material.dart';
+import '../ui/theme/app_tokens.dart';
 
 class Constatnts {
   static const String logo = "assets/images/logo.png";
   static const String bgleaf = "assets/images/bg_leaf.png";
-  static const Color primaryColor = Colors.green;
+  // Deprecated: use AppColors.brand directly in new code.
+  static const primaryColor = AppColors.brand;
 
   static const String baseUrl =
       'https://maps.googleapis.com/maps/api/place/nearbysearch/json';

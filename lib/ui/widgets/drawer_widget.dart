@@ -1,4 +1,4 @@
-import 'package:oda_black_car_service/ui/pages/credit_card_page.dart';
+import 'package:oda_black_car_service/ui/screens/home/pages/wallet_page.dart';
 import 'package:oda_black_car_service/ui/pages/promo_code_page.dart';
 import 'package:oda_black_car_service/ui/pages/ride_history_page.dart';
 import 'package:oda_black_car_service/ui/pages/settings_page.dart';
@@ -84,11 +84,15 @@ class DrawerWidget extends StatelessWidget {
                 ),
                 GestureDetector(
                   onTap: () {
-                    Navigator.of(context)
-                        .popAndPushNamed(CreditCardPage.routeName);
+                    Navigator.of(context).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const WalletPage(),
+                      ),
+                    );
                   },
                   child: Text(
-                    "Credit Card",
+                    "Payment Methods",
                     style: CustomStyles.cardBoldDarkDrawerTextStyle,
                   ),
                 ),

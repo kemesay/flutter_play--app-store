@@ -9,8 +9,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:oda_black_car_service/core/utils/booking_square_payment.dart';
 import 'package:oda_black_car_service/core/utils/distance_utils.dart';
 import 'package:oda_black_car_service/core/utils/pricing_calculator.dart';
+import 'package:oda_black_car_service/core/config/square_runtime_config.dart';
 import 'package:oda_black_car_service/data/models/additional_stop_model.dart';
 import 'package:oda_black_car_service/data/models/airport_booking_request.dart';
 import 'package:oda_black_car_service/data/models/airport_pickup_preference_model.dart';
@@ -20,9 +22,11 @@ import 'package:oda_black_car_service/data/models/car_model.dart';
 import 'package:oda_black_car_service/data/models/extra_option_model.dart';
 import 'package:oda_black_car_service/data/models/gratuity_model.dart';
 import 'package:oda_black_car_service/data/models/hourly_charter_booking_request.dart';
+import 'package:oda_black_car_service/data/models/payment_detail_model.dart';
 import 'package:oda_black_car_service/data/models/payment_method_type.dart';
 import 'package:oda_black_car_service/data/models/point_to_point_booking_request.dart';
 import 'package:oda_black_car_service/data/models/selected_extra_option.dart';
+import 'package:oda_black_car_service/data/models/square_payment_payload.dart';
 import 'package:oda_black_car_service/data/models/travel_type.dart';
 import 'package:oda_black_car_service/data/services/directions_service.dart';
 import 'package:oda_black_car_service/data/services/place_service.dart';
@@ -31,10 +35,11 @@ import 'package:oda_black_car_service/providers/auth_provider.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
 import 'package:oda_black_car_service/providers/catalog_provider.dart';
 import 'package:oda_black_car_service/providers/payment_provider.dart';
+import 'package:oda_black_car_service/ui/theme/app_tokens.dart';
 import 'package:oda_black_car_service/ui/widgets/app_error_banner.dart';
 import 'package:oda_black_car_service/ui/widgets/custom_snackbar.dart';
+import 'widgets/square_payment_method_section.dart';
 
-// part 'book_ride_page.dart';
 part 'forms/point_to_point_form.dart';
 part 'forms/airport_booking_form.dart';
 part 'forms/hourly_charter_form.dart';
@@ -55,14 +60,17 @@ bool _isUnitedStatesLocation(PlaceDetail detail) {
   return address.contains('united states') || address.endsWith(' usa');
 }
 
-bool _isCaliforniaLocation(PlaceDetail detail) {
-  final state = detail.administrativeAreaShortName?.toUpperCase();
-  if (state != null && state == 'CA') {
-    return _isUnitedStatesLocation(detail);
-  }
+// Service area: pickup must originate in California or Washington state;
+// drop-off is unrestricted anywhere in the US (see _isUnitedStatesLocation).
+bool _isAllowedPickupState(PlaceDetail detail) {
   if (!_isUnitedStatesLocation(detail)) return false;
+  final state = detail.administrativeAreaShortName?.toUpperCase();
+  if (state == 'CA' || state == 'WA') return true;
   final address = detail.formattedAddress.toLowerCase();
-  return address.contains(', ca') || address.contains('california');
+  return address.contains(', ca') ||
+      address.contains('california') ||
+      address.contains(', wa') ||
+      address.contains('washington');
 }
 
 class BookRidePage extends StatefulWidget {
@@ -74,6 +82,7 @@ class BookRidePage extends StatefulWidget {
 
 class _BookRidePageState extends State<BookRidePage> {
   final _scrollController = ScrollController();
+  final _airportFormKey = GlobalKey<FormState>();
   double _savedScrollPosition = 0.0;
   static _BookRidePageState? _instance;
 
@@ -145,16 +154,23 @@ class _BookRidePageState extends State<BookRidePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _HeroCard(travelType: travelType),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             _TravelTypeSelector(current: travelType),
-            const SizedBox(height: 24),
+            const SizedBox(height: AppSpacing.lg),
             AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
+              duration: Duration.zero,
+              switchInCurve: Curves.linear,
+              switchOutCurve: Curves.linear,
+              layoutBuilder: (currentChild, previousChildren) => currentChild!,
               child: switch (travelType) {
-                TravelType.pointToPoint => const _PointToPointForm(),
-                TravelType.airport =>
-                  AirportBookingForm(formKey: GlobalKey<FormState>()),
-                TravelType.hourlyCharter => const _HourlyCharterForm(),
+                TravelType.pointToPoint =>
+                  const _PointToPointForm(key: ValueKey('p2p')),
+                TravelType.airport => AirportBookingForm(
+                    key: const ValueKey('airport'),
+                    formKey: _airportFormKey,
+                  ),
+                TravelType.hourlyCharter =>
+                  const _HourlyCharterForm(key: ValueKey('hourly')),
               },
             ),
           ],
@@ -217,7 +233,7 @@ class _HeroCard extends StatelessWidget {
             ),
             child: Icon(icon, color: colorScheme.onPrimary),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: AppSpacing.md),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -229,7 +245,7 @@ class _HeroCard extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                       ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: AppSpacing.sm),
                 Text(
                   subtitle,
                   style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -692,7 +708,9 @@ class _RouteMapPickerSheetState extends State<_RouteMapPickerSheet> {
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    // GoogleMap disposes its controller when removed from the tree.
+    // Manual dispose causes "_dependents.isEmpty" while the map fades out.
+    _mapController = null;
     super.dispose();
   }
 
@@ -728,11 +746,11 @@ class _RouteMapPickerSheetState extends State<_RouteMapPickerSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Row(
               children: [
                 const Icon(Icons.explore_outlined),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Text(
                   'Plan with Google Maps',
                   style: theme.textTheme.titleMedium?.copyWith(
@@ -775,7 +793,7 @@ class _RouteMapPickerSheetState extends State<_RouteMapPickerSheet> {
               'Tap anywhere on the map to select a ${_mode == _RoutePointMode.pickup ? 'pickup' : 'drop-off'} point. We\'ll reverse geocode the exact address and calculate the driving distance via Google Directions.',
               style: theme.textTheme.bodySmall,
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(24),
@@ -823,7 +841,7 @@ class _RouteMapPickerSheetState extends State<_RouteMapPickerSheet> {
                 ),
               ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             Wrap(
               spacing: 12,
               runSpacing: 8,
@@ -1046,7 +1064,7 @@ class _MetricChip extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 18, color: theme.colorScheme.primary),
-          const SizedBox(width: 8),
+          const SizedBox(width: AppSpacing.sm),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -1292,9 +1310,9 @@ class _TripSummaryBoard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Divider(color: theme.colorScheme.outline.withOpacity(0.4)),
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Wrap(
               spacing: 12,
               runSpacing: 8,
@@ -1519,6 +1537,7 @@ class _HourlyCharterMap extends StatefulWidget {
     this.routePolyline,
     this.routeDistance,
     this.routeDuration,
+    this.waypoints,
   });
 
   final PlaceDetail? pickup;
@@ -1526,6 +1545,10 @@ class _HourlyCharterMap extends StatefulWidget {
   final List<LatLng>? routePolyline;
   final double? routeDistance;
   final String? routeDuration;
+  // Side pick / detour stops, in visit order — rendered as numbered markers
+  // and folded into the camera bounds so the map stays in sync as they're
+  // added, edited, or removed.
+  final List<PlaceDetail>? waypoints;
 
   @override
   State<_HourlyCharterMap> createState() => _HourlyCharterMapState();
@@ -1556,21 +1579,31 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
 
   @override
   void dispose() {
-    _mapController?.dispose();
+    _mapController = null;
     super.dispose();
   }
+
+  List<LatLng> _waypointLatLngs(List<PlaceDetail>? details) =>
+      (details ?? const [])
+          .map((d) => LatLng(d.lat, d.lng))
+          .toList(growable: false);
 
   @override
   void didUpdateWidget(_HourlyCharterMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Update camera position when locations or route change (like DirectionsRenderer)
+    // Update camera position when locations, route, or side-pick stops
+    // change (like DirectionsRenderer).
     final locationsChanged =
         (widget.pickup != null || widget.dropoff != null) &&
             (oldWidget.pickup != widget.pickup ||
                 oldWidget.dropoff != widget.dropoff);
     final routeChanged = widget.routePolyline != oldWidget.routePolyline;
+    final waypointsChanged = !listEquals(
+      _waypointLatLngs(oldWidget.waypoints),
+      _waypointLatLngs(widget.waypoints),
+    );
 
-    if ((locationsChanged || routeChanged) && _isMapReady) {
+    if ((locationsChanged || routeChanged || waypointsChanged) && _isMapReady) {
       // If we have a route polyline, fit bounds to it (like DirectionsRenderer)
       if (widget.routePolyline != null && widget.routePolyline!.isNotEmpty) {
         _fitBoundsToRoute();
@@ -1613,6 +1646,14 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
       if (widget.dropoff!.lat > maxLat) maxLat = widget.dropoff!.lat;
       if (widget.dropoff!.lng < minLng) minLng = widget.dropoff!.lng;
       if (widget.dropoff!.lng > maxLng) maxLng = widget.dropoff!.lng;
+    }
+    // Also include side-pick/detour stops, so a newly added stop is always
+    // visible even before the polyline finishes re-fetching.
+    for (final stop in widget.waypoints ?? const <PlaceDetail>[]) {
+      if (stop.lat < minLat) minLat = stop.lat;
+      if (stop.lat > maxLat) maxLat = stop.lat;
+      if (stop.lng < minLng) minLng = stop.lng;
+      if (stop.lng > maxLng) maxLng = stop.lng;
     }
 
     final bounds = LatLngBounds(
@@ -1780,6 +1821,24 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
         ),
       );
     }
+    // Side-pick / detour stops — numbered amber markers between A and B so
+    // the map visibly confirms each stop the moment it's added.
+    final waypoints = widget.waypoints ?? const <PlaceDetail>[];
+    for (var i = 0; i < waypoints.length; i++) {
+      final stop = waypoints[i];
+      markers.add(
+        Marker(
+          markerId: MarkerId('waypoint-$i'),
+          position: LatLng(stop.lat, stop.lng),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(
+            title: 'Stop ${i + 1}',
+            snippet: stop.formattedAddress,
+          ),
+        ),
+      );
+    }
     return markers;
   }
 
@@ -1901,7 +1960,7 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       CircularProgressIndicator(),
-                      SizedBox(height: 16),
+                      SizedBox(height: AppSpacing.md),
                       Text('Loading map...'),
                     ],
                   ),
@@ -1919,7 +1978,7 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
                       children: [
                         const Icon(Icons.error_outline,
                             size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppSpacing.md),
                         Text(
                           'Map failed to load',
                           style:
@@ -1928,13 +1987,13 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
                                   ),
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: AppSpacing.sm),
                         Text(
                           _mapError!,
                           style: Theme.of(context).textTheme.bodySmall,
                           textAlign: TextAlign.center,
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: AppSpacing.md),
                         ElevatedButton.icon(
                           onPressed: () {
                             setState(() {
@@ -2077,6 +2136,36 @@ class _LocationPickerField extends StatefulWidget {
 
 class _LocationPickerFieldState extends State<_LocationPickerField> {
   String? _lastSelectedSuggestion;
+  FocusNode? _attachedFocusNode;
+  VoidCallback? _focusListener;
+
+  @override
+  void dispose() {
+    _detachFocusListener();
+    super.dispose();
+  }
+
+  void _detachFocusListener() {
+    if (_attachedFocusNode != null && _focusListener != null) {
+      _attachedFocusNode!.removeListener(_focusListener!);
+    }
+    _attachedFocusNode = null;
+    _focusListener = null;
+  }
+
+  void _attachFocusListener(FocusNode focusNode) {
+    if (_attachedFocusNode == focusNode) return;
+    _detachFocusListener();
+    _attachedFocusNode = focusNode;
+    _focusListener = () {
+      if (!focusNode.hasFocus) return;
+      _BookRidePageState.saveScrollPositionStatic();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _BookRidePageState.restoreScrollPositionStatic();
+      });
+    };
+    focusNode.addListener(_focusListener!);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2143,18 +2232,7 @@ class _LocationPickerFieldState extends State<_LocationPickerField> {
       hideOnSelect: true,
       debounceDuration: const Duration(milliseconds: 300),
       builder: (context, textEditingController, focusNode) {
-        // Prevent auto-scrolling when location field gets focus
-        focusNode.addListener(() {
-          if (focusNode.hasFocus) {
-            // Save scroll position when field gets focus to prevent auto-scroll
-            _BookRidePageState.saveScrollPositionStatic();
-            // Restore scroll position immediately to prevent auto-scroll
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              _BookRidePageState.restoreScrollPositionStatic();
-            });
-          }
-        });
-
+        _attachFocusListener(focusNode);
         return TextField(
           controller: textEditingController,
           focusNode: focusNode,
@@ -2364,7 +2442,7 @@ class _DatePickerBox extends StatelessWidget {
                           : theme.disabledColor,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     date != null
                         ? DateFormat('MM/dd/yyyy').format(date!)
@@ -2442,7 +2520,7 @@ class _TimePickerBox extends StatelessWidget {
                           : theme.disabledColor,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: AppSpacing.xs),
                   Text(
                     time != null ? time!.format(context) : 'Select time',
                     style: theme.textTheme.bodyLarge?.copyWith(
@@ -2743,7 +2821,7 @@ class _ExtraOptionsSelectorState extends State<_ExtraOptionsSelector> {
                     ),
                   ),
                   if (maxQuantity != null) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: AppSpacing.xs),
                     Text(
                       'Limit: up to $maxQuantity ${maxQuantity == 1 ? 'unit' : 'units'} per booking',
                       style: theme.textTheme.bodySmall,
@@ -2780,7 +2858,7 @@ class _ExtraOptionsSelectorState extends State<_ExtraOptionsSelector> {
                     'Add-on subtotal: ${_formatCurrency(option.pricePerItem * quantity, option.currency)}',
                     style: theme.textTheme.bodyMedium,
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: AppSpacing.lg),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton(
@@ -2803,7 +2881,7 @@ class _ExtraOptionsSelectorState extends State<_ExtraOptionsSelector> {
                       child: const Text('Save'),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: AppSpacing.sm),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -2928,6 +3006,7 @@ class _BookingForSection extends StatelessWidget {
 
 class _PaymentMethodSection extends StatefulWidget {
   const _PaymentMethodSection({
+    super.key,
     required this.paymentProvider,
     required this.paymentMethod,
     required this.onMethodChanged,
@@ -2956,7 +3035,6 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
   bool _isPrimaryCard = true;
   bool _userOverrodeSelection = false;
   bool _defaultsApplied = false;
-  int? _lastCardSignature;
 
   @override
   void dispose() {
@@ -2974,39 +3052,6 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _applyDefaultSelectionIfNeeded();
     });
-  }
-
-  @override
-  void didUpdateWidget(covariant _PaymentMethodSection oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.paymentProvider, widget.paymentProvider)) {
-      _defaultsApplied = false;
-      _userOverrodeSelection = false;
-    }
-    _checkForCardChanges();
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _checkForCardChanges();
-  }
-
-  void _checkForCardChanges() {
-    final signature = _computeCardSignature();
-    if (signature != _lastCardSignature) {
-      _lastCardSignature = signature;
-      _defaultsApplied = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _applyDefaultSelectionIfNeeded();
-      });
-    }
-  }
-
-  int _computeCardSignature() {
-    final provider = widget.paymentProvider;
-    final primaryId = provider.primaryCard?.paymentDetailId ?? -1;
-    return Object.hash(primaryId, provider.cards.length);
   }
 
   @override
@@ -3050,7 +3095,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
               title: Row(
                 children: [
                   const Icon(Icons.credit_card, size: 20),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       'Use Primary Card',
@@ -3080,7 +3125,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
             ),
           ),
         if (isAuthenticated && hasSavedCards) ...[
-          if (primaryCard != null) const SizedBox(height: 8),
+          if (primaryCard != null) const SizedBox(height: AppSpacing.sm),
           Card(
             elevation: 0,
             color: widget.paymentMethod == PaymentMethodType.existingCard
@@ -3102,7 +3147,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
               title: Row(
                 children: [
                   const Icon(Icons.payment, size: 20),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       'Select Saved Card',
@@ -3125,7 +3170,8 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
             ),
           ),
         ],
-        if (primaryCard != null || hasSavedCards) const SizedBox(height: 8),
+        if (primaryCard != null || hasSavedCards)
+          const SizedBox(height: AppSpacing.sm),
         Card(
           elevation: 0,
           color: widget.paymentMethod == PaymentMethodType.newCard
@@ -3147,7 +3193,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
             title: Row(
               children: [
                 const Icon(Icons.add_card, size: 20),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     isAuthenticated ? 'Add New Card' : 'Enter Payment Details',
@@ -3170,7 +3216,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
           ),
         ),
         if (!isAuthenticated) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -3187,7 +3233,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
                   size: 20,
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     'Please sign in to save payment methods for future use',
@@ -3203,7 +3249,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
         ],
         if (widget.paymentMethod == PaymentMethodType.primaryCard &&
             primaryCard != null) ...[
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -3220,7 +3266,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
                   size: 20,
                   color: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     'Your primary card will be used for this payment',
@@ -3236,7 +3282,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
         ],
         if (widget.paymentMethod == PaymentMethodType.existingCard &&
             paymentProvider.cards.isNotEmpty) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Padding(
             padding: const EdgeInsets.only(left: 16),
             child: Container(
@@ -3284,7 +3330,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
                                       ? const Color(0xFF03930A)
                                       : Theme.of(context).colorScheme.onSurface,
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: AppSpacing.sm),
                                 Expanded(
                                   child: Column(
                                     crossAxisAlignment:
@@ -3339,7 +3385,7 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
           ),
         ],
         if (widget.paymentMethod == PaymentMethodType.newCard) ...[
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -3405,8 +3451,12 @@ class _PaymentMethodSectionState extends State<_PaymentMethodSection> {
 
     if (widget.paymentMethod == preferredMethod) {
       if (shouldSelectSavedCard && widget.selectedPaymentDetailId == null) {
-        widget.onExistingCardSelected(
-            widget.paymentProvider.cards.first.paymentDetailId);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _userOverrodeSelection) return;
+          widget.onExistingCardSelected(
+            widget.paymentProvider.cards.first.paymentDetailId,
+          );
+        });
       }
       _defaultsApplied = true;
       return;
@@ -3514,14 +3564,14 @@ class _CardFormState extends State<_CardForm> {
             },
             validator: validateCardNumber,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
               Chip(
                 avatar: const Icon(Icons.credit_card, size: 18),
                 label: Text(_cardBrand.label),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: AppSpacing.sm),
               Text(
                 'CVV: ${cvvExpectedLength(_cardBrand)} digits',
                 style: Theme.of(context)
@@ -3595,7 +3645,7 @@ class _CardFormState extends State<_CardForm> {
             validator: validateZip,
           ),
           if (isAuthenticated) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             CheckboxListTile(
               value: widget.isPrimary,
               contentPadding: EdgeInsets.zero,
@@ -3606,7 +3656,7 @@ class _CardFormState extends State<_CardForm> {
             ),
           ],
           if (_validationError != null) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -3620,7 +3670,7 @@ class _CardFormState extends State<_CardForm> {
                     color: Theme.of(context).colorScheme.onErrorContainer,
                     size: 20,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       _validationError!,
@@ -3635,7 +3685,7 @@ class _CardFormState extends State<_CardForm> {
             ),
           ],
           if (_isValidated) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: AppSpacing.sm),
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -3649,7 +3699,7 @@ class _CardFormState extends State<_CardForm> {
                     color: Theme.of(context).colorScheme.onPrimaryContainer,
                     size: 20,
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: AppSpacing.sm),
                   Expanded(
                     child: Text(
                       isAuthenticated
@@ -3665,7 +3715,7 @@ class _CardFormState extends State<_CardForm> {
               ),
             ),
           ],
-          const SizedBox(height: 8),
+          const SizedBox(height: AppSpacing.sm),
           FilledButton(
             onPressed: _isValidating ? null : _handleValidateAndSave,
             style: FilledButton.styleFrom(
@@ -3851,7 +3901,7 @@ class _TripPriceSummaryCard extends StatelessWidget {
               children: [
                 Icon(Icons.analytics_outlined,
                     color: theme.colorScheme.primary),
-                const SizedBox(width: 8),
+                const SizedBox(width: AppSpacing.sm),
                 Expanded(
                   child: Text(
                     'Pricing preview',
@@ -3863,7 +3913,7 @@ class _TripPriceSummaryCard extends StatelessWidget {
               ],
             ),
             if (subtitle != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 subtitle!,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -3872,7 +3922,7 @@ class _TripPriceSummaryCard extends StatelessWidget {
               ),
             ],
             if (breakdown.distanceInMiles != null) ...[
-              const SizedBox(height: 4),
+              const SizedBox(height: AppSpacing.xs),
               Text(
                 // Match website: always use 2 decimal places
                 'Distance: ${breakdown.distanceInMiles!.toStringAsFixed(2)} miles',
@@ -3881,14 +3931,14 @@ class _TripPriceSummaryCard extends StatelessWidget {
                 ),
               ),
             ],
-            const SizedBox(height: 16),
+            const SizedBox(height: AppSpacing.md),
             for (final line in lines) ...[
               _PricingRow(
                 label: line.label,
                 amount: _formatCurrency(line.amount, breakdown.currency),
                 emphasize: false,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
             ],
             Divider(color: theme.colorScheme.outline.withOpacity(0.4)),
             _PricingRow(
@@ -3896,7 +3946,7 @@ class _TripPriceSummaryCard extends StatelessWidget {
               amount: _formatCurrency(breakdown.subtotal, breakdown.currency),
             ),
             if (breakdown.gratuityAmount > 0) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: AppSpacing.sm),
               _PricingRow(
                 label:
                     'Gratuity${breakdown.gratuityPercentage != null ? ' (${breakdown.gratuityPercentage!.toStringAsFixed(0)}%)' : ''}',
@@ -3977,6 +4027,92 @@ class SectionHeader extends StatelessWidget {
       style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.w700,
           ),
+    );
+  }
+}
+
+/// Avoids mounting legacy card fields before Square config is known (prevents
+/// disposing [TextEditingController]s mid-frame when config finishes loading).
+class _BookingPaymentMethodPicker extends StatelessWidget {
+  const _BookingPaymentMethodPicker({
+    required this.paymentProvider,
+    required this.paymentMethod,
+    required this.selectedPaymentDetailId,
+    required this.onMethodChanged,
+    required this.onExistingCardSelected,
+    required this.onNewCardSaved,
+    required this.onSquareMethodChanged,
+    required this.onSquareSavedCardSelected,
+    this.selectedSquareCardId,
+    this.verifiedSquarePayload,
+    this.squareTokenizedAtTotal,
+    this.bookingTotal,
+    this.onSquareVerified,
+    this.onSquareVerificationCleared,
+    this.cardholderNameHint,
+    this.billingZipHint,
+  });
+
+  final PaymentProvider paymentProvider;
+  final PaymentMethodType paymentMethod;
+  final int? selectedPaymentDetailId;
+  final ValueChanged<PaymentMethodType> onMethodChanged;
+  final ValueChanged<int?> onExistingCardSelected;
+  final ValueChanged<CardDetails> onNewCardSaved;
+  final ValueChanged<PaymentMethodType> onSquareMethodChanged;
+  final ValueChanged<PaymentDetailModel> onSquareSavedCardSelected;
+  final String? selectedSquareCardId;
+  final SquarePaymentPayload? verifiedSquarePayload;
+  final double? squareTokenizedAtTotal;
+  final double? bookingTotal;
+  final void Function(SquarePaymentPayload payload, double totalAtVerify)?
+      onSquareVerified;
+  final VoidCallback? onSquareVerificationCleared;
+  final String? cardholderNameHint;
+  final String? billingZipHint;
+
+  @override
+  Widget build(BuildContext context) {
+    final configLoading = context.select<SquareRuntimeConfig, bool>(
+      (c) => c.isLoading && !c.hasConfig,
+    );
+    final squareEnabled = context.select<SquareRuntimeConfig, bool>(
+      (c) => c.squareEnabled,
+    );
+    if (configLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (squareEnabled) {
+      return SquarePaymentMethodSection(
+        key: const ValueKey('square_payment'),
+        paymentProvider: paymentProvider,
+        paymentMethod: paymentMethod,
+        selectedPaymentDetailId: selectedPaymentDetailId,
+        selectedSquareCardId: selectedSquareCardId,
+        onMethodChanged: onSquareMethodChanged,
+        onSavedCardSelected: onSquareSavedCardSelected,
+        verifiedSquarePayload: verifiedSquarePayload,
+        squareTokenizedAtTotal: squareTokenizedAtTotal,
+        bookingTotal: bookingTotal,
+        onSquareVerified: onSquareVerified ?? (_, __) {},
+        onSquareVerificationCleared: onSquareVerificationCleared ?? () {},
+        cardholderNameHint: cardholderNameHint,
+        billingZipHint: billingZipHint,
+      );
+    }
+
+    return _PaymentMethodSection(
+      key: const ValueKey('legacy_payment'),
+      paymentProvider: paymentProvider,
+      paymentMethod: paymentMethod,
+      selectedPaymentDetailId: selectedPaymentDetailId,
+      onMethodChanged: onMethodChanged,
+      onExistingCardSelected: onExistingCardSelected,
+      onNewCardSaved: onNewCardSaved,
     );
   }
 }

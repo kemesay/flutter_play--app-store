@@ -8,6 +8,10 @@ import '../../../../../../providers/support_provider.dart';
 import '../../../../../../providers/auth_provider.dart';
 import '../../../../../../providers/social_media_provider.dart';
 import '../../../../../../ui/widgets/custom_snackbar.dart';
+import '../../../theme/app_tokens.dart';
+import '../../../widgets/app_card.dart';
+import '../../../widgets/app_primary_button.dart';
+import '../../../widgets/app_section_header.dart';
 
 class SupportPage extends StatelessWidget {
   static const routeName = "support";
@@ -46,7 +50,7 @@ class SupportPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF03930A), // Brand primary color
+      backgroundColor: AppColors.brand,
       body: SafeArea(
         child: Column(
           children: [
@@ -68,7 +72,7 @@ class SupportPage extends StatelessWidget {
                       }
                     },
                     color: Colors.white,
-                    textColor: const Color(0xFF03930A),
+                    textColor: AppColors.brand,
                     padding: const EdgeInsets.all(6),
                     shape: const CircleBorder(),
                     child: const Icon(
@@ -95,8 +99,8 @@ class SupportPage extends StatelessWidget {
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    Color(0xFF03930A), // Primary brand color
-                    Color(0xFF4CB051), // Light brand color
+                    AppColors.brand,
+                    AppColors.brandLight,
                   ],
                 ),
               ),
@@ -120,7 +124,7 @@ class SupportPage extends StatelessWidget {
                     child: const Center(
                       child: Icon(
                         Icons.headset_mic,
-                        color: Color(0xFF03930A),
+                        color: AppColors.brand,
                         size: 50,
                       ),
                     ),
@@ -154,30 +158,12 @@ class SupportPage extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       // Contact methods section
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 20),
+                      AppCard(
                         padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                        ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              "Contact Methods",
-                              style:
-                                  CustomStyles.cardBoldDarkTextStyle.copyWith(
-                                fontSize: 18,
-                              ),
-                            ),
+                            const AppSectionHeader(title: "Contact Methods"),
                             const SizedBox(height: 20),
                             // Static contact methods
                             _buildClickableContactRow(
@@ -208,21 +194,9 @@ class SupportPage extends StatelessWidget {
                       ),
                       const SizedBox(height: 20),
                       // Messaging form section
-                      Container(
-                        margin: const EdgeInsets.only(bottom: 20),
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 10,
-                              offset: const Offset(0, 5),
-                            ),
-                          ],
-                        ),
-                        child: const _SupportForm(),
+                      const AppCard(
+                        padding: EdgeInsets.all(20),
+                        child: _SupportForm(),
                       ),
                     ],
                   ),
@@ -475,18 +449,12 @@ class _SupportFormState extends State<_SupportForm> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            "Send us a message",
-            style: CustomStyles.cardBoldDarkTextStyle.copyWith(
-              fontSize: 18,
-            ),
-          ),
+          const AppSectionHeader(title: "Send us a message"),
           const SizedBox(height: 20),
           TextFormField(
             controller: _nameController,
             decoration: const InputDecoration(
               labelText: 'Full name',
-              border: OutlineInputBorder(),
             ),
             validator: (value) => value == null || value.trim().isEmpty
                 ? 'Please enter your name'
@@ -497,7 +465,6 @@ class _SupportFormState extends State<_SupportForm> {
             controller: _emailController,
             decoration: const InputDecoration(
               labelText: 'Email',
-              border: OutlineInputBorder(),
             ),
             validator: (value) {
               if (value == null || value.trim().isEmpty) {
@@ -516,7 +483,6 @@ class _SupportFormState extends State<_SupportForm> {
             controller: _phoneController,
             decoration: const InputDecoration(
               labelText: 'Phone number',
-              border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 12),
@@ -524,7 +490,6 @@ class _SupportFormState extends State<_SupportForm> {
             controller: _subjectController,
             decoration: const InputDecoration(
               labelText: 'Subject',
-              border: OutlineInputBorder(),
             ),
             validator: (value) => value == null || value.trim().isEmpty
                 ? 'Please enter a subject'
@@ -535,7 +500,6 @@ class _SupportFormState extends State<_SupportForm> {
             controller: _messageController,
             decoration: const InputDecoration(
               labelText: 'Message',
-              border: OutlineInputBorder(),
             ),
             minLines: 3,
             maxLines: 6,
@@ -543,10 +507,12 @@ class _SupportFormState extends State<_SupportForm> {
                 ? 'Please enter your message'
                 : null,
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: AppSpacing.md),
           SizedBox(
             width: double.infinity,
-            child: FilledButton(
+            child: AppPrimaryButton(
+              label: 'Send Message',
+              isLoading: supportProvider.isSubmitting,
               onPressed: supportProvider.isSubmitting
                   ? null
                   : () async {
@@ -576,14 +542,6 @@ class _SupportFormState extends State<_SupportForm> {
                         );
                       }
                     },
-              child: supportProvider.isSubmitting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Text('Send Message'),
             ),
           ),
           const SizedBox(height: 20), // Extra space at the bottom

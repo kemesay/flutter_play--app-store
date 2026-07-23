@@ -78,5 +78,53 @@ class PaymentService {
       body: const {},
     );
   }
+
+  /// Save card on file via Square nonce (wallet — no PAN stored).
+  Future<PaymentDetailModel> saveSquareCard({
+    required String sourceId,
+    required String cardOwnerName,
+    required String zipCode,
+    bool isPrimary = false,
+    String? verificationToken,
+  }) async {
+    final response = await _apiClient.post(
+      '/users/payment-detail/validate-square-card',
+      authenticated: true,
+      body: {
+        'sourceId': sourceId,
+        'cardOwnerName': cardOwnerName,
+        'zipCode': zipCode,
+        'isPrimary': isPrimary,
+        if (verificationToken != null && verificationToken.isNotEmpty)
+          'verificationToken': verificationToken,
+      },
+    ) as Map<String, dynamic>;
+
+    final nested = response['paymentDetail'] as Map<String, dynamic>?;
+    final paymentDetailId = _parseInt(
+      response['paymentDetailId'] ?? nested?['paymentDetailId'],
+    );
+
+    if (isPrimary && paymentDetailId != 0) {
+      await setPrimaryPaymentCard(paymentDetailId);
+      return fetchPaymentCardById(paymentDetailId);
+    }
+
+    if (nested != null) {
+      return PaymentDetailModel.fromJson(nested);
+    }
+    if (paymentDetailId != 0) {
+      return fetchPaymentCardById(paymentDetailId);
+    }
+    throw const FormatException('Square card save response missing payment detail');
+  }
+
+  static int _parseInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is String) return int.tryParse(value) ?? 0;
+    if (value is double) return value.toInt();
+    return 0;
+  }
 }
 

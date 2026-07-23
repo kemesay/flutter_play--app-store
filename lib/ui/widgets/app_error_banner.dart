@@ -23,6 +23,8 @@ class AppErrorBanner extends StatelessWidget {
           Expanded(
             child: Text(
               message,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: colorScheme.onErrorContainer,
                   ),

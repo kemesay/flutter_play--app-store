@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import '../../../../core/utils/card_validation_utils.dart';
-import '../../../../data/models/card_details.dart';
+
+import '../../../../core/config/square_runtime_config.dart';
+import '../../../../core/utils/payment_card_utils.dart';
 import '../../../../providers/payment_provider.dart';
+import 'square_wallet_add_sheet.dart';
 
 class WalletPage extends StatelessWidget {
   const WalletPage({super.key});
@@ -11,58 +12,88 @@ class WalletPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final paymentProvider = context.watch<PaymentProvider>();
+    final squareConfig = context.watch<SquareRuntimeConfig>();
+    final squareEnabled = squareConfig.squareEnabled;
+    final squareLoading = squareConfig.isLoading && !squareConfig.hasConfig;
 
     return Scaffold(
       body: Column(
         children: [
-          // Header with back arrow
           Container(
             padding: const EdgeInsets.all(16),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: <Widget>[
+              children: [
                 MaterialButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
+                  onPressed: () => Navigator.of(context).pop(),
                   color: Theme.of(context).colorScheme.surface,
                   textColor: Theme.of(context).colorScheme.primary,
                   padding: const EdgeInsets.all(8),
                   shape: const CircleBorder(),
                   elevation: 2,
-                  child: const Icon(
-                    Icons.arrow_back,
-                    size: 20,
-                  ),
+                  child: const Icon(Icons.arrow_back, size: 20),
                 ),
                 const SizedBox(width: 16),
                 Text(
-                  "Payment Methods",
+                  'Payment Methods',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.normal,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
+                    fontWeight: FontWeight.normal,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
-                const Spacer(),
               ],
             ),
           ),
-          // Content
+          if (!squareEnabled) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _SquareUnavailableBanner(
+                isLoading: squareLoading,
+                lastError: squareConfig.lastError,
+                onRetry: () => squareConfig.load(force: true),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
           Expanded(
             child: RefreshIndicator(
               onRefresh: paymentProvider.loadCards,
               child: paymentProvider.isLoading && paymentProvider.cards.isEmpty
                   ? const Center(child: CircularProgressIndicator())
+                  : paymentProvider.cards.isEmpty
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.all(24),
+                      children: [
+                        Icon(
+                          Icons.credit_card_off_outlined,
+                          size: 56,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          squareEnabled
+                              ? 'No saved cards yet. Tap Add Square card to save one securely.'
+                              : 'Card wallet is unavailable until Square payments are configured.',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodyLarge,
+                        ),
+                      ],
+                    )
                   : ListView.builder(
                       padding: const EdgeInsets.all(16),
                       itemCount: paymentProvider.cards.length,
                       itemBuilder: (context, index) {
                         final card = paymentProvider.cards[index];
+                        final displayNumber = isSquareReadyCard(card)
+                            ? formatSquareWalletCardNumber(card)
+                            : card.maskedCardNumber;
+                        final expiry = formatSquareExpiry(card);
                         return _PaymentCardTile(
-                          cardNumber: card.maskedCardNumber,
+                          cardNumber: displayNumber,
                           cardOwnerName: card.cardOwnerName,
-                          expirationDate: card.expirationDate,
+                          expirationDate: expiry ?? card.expirationDate,
                           isPrimary: card.isPrimary,
+                          isSquareCard: isSquareReadyCard(card),
                           onMakePrimary: () => context
                               .read<PaymentProvider>()
                               .setPrimary(card.paymentDetailId),
@@ -75,406 +106,121 @@ class WalletPage extends StatelessWidget {
       ),
       floatingActionButton: FloatingActionButton.extended(
         icon: const Icon(Icons.add),
-        label: const Text('Add card'),
-        onPressed: () => _showAddCardSheet(context),
+        label: Text(squareEnabled ? 'Add Square card' : 'Add card'),
+        onPressed: squareLoading
+            ? null
+            : () => _handleAddCard(context, squareEnabled: squareEnabled),
       ),
     );
   }
 
-  Future<void> _showAddCardSheet(BuildContext context) async {
-    final formKey = GlobalKey<FormState>();
-    final cardNumberController = TextEditingController();
-    final cardNameController = TextEditingController();
-    final expiryController = TextEditingController();
-    final cvvController = TextEditingController();
-    final zipController = TextEditingController();
-    bool isPrimary = false;
-    CardBrand cardBrand = CardBrand.unknown;
-    bool isValidating = false;
-    bool isValidated = false;
-    String? validationError;
+  Future<void> _handleAddCard(
+    BuildContext context, {
+    required bool squareEnabled,
+  }) async {
+    if (!squareEnabled) {
+      await _showSquareUnavailableDialog(context);
+      return;
+    }
 
-    await showModalBottomSheet<void>(
+    final saved = await showSquareWalletAddSheet(context);
+    if (saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Card saved to your wallet'),
+          backgroundColor: Color(0xFF03930A),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showSquareUnavailableDialog(BuildContext context) async {
+    final squareConfig = context.read<SquareRuntimeConfig>();
+    await showDialog<void>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Payments unavailable'),
+        content: Text(
+          squareConfig.lastError != null
+              ? 'We could not load Square payment settings. '
+                    'Adding a card requires  please try again in a moment.'
+              : 'Adding a card requires  secure payments. '
+                    'This service is not available right now — please try again later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
           ),
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              void clearValidationState() {
-                if (isValidated || validationError != null) {
-                  setState(() {
-                    isValidated = false;
-                    validationError = null;
-                  });
-                }
-              }
-
-              Future<void> handleValidateAndSave() async {
-                if (!formKey.currentState!.validate()) return;
-
-                final cardDetails = CardDetails(
-                  creditCardNumber: cardNumberController.text
-                      .replaceAll(RegExp(r'\s+'), '')
-                      .trim(),
-                  cardOwnerName: cardNameController.text.trim(),
-                  expirationDate: expiryController.text.trim(),
-                  securityCode: cvvController.text.trim(),
-                  zipCode: zipController.text.trim(),
-                  isPrimary: isPrimary,
-                );
-
-                // Client-side validation
-                if (cardDetails.creditCardNumber.isEmpty ||
-                    cardDetails.cardOwnerName.isEmpty ||
-                    cardDetails.expirationDate.isEmpty ||
-                    cardDetails.securityCode.isEmpty ||
-                    cardDetails.zipCode.isEmpty) {
-                  setState(() {
-                    validationError = 'All card fields are required';
-                    isValidated = false;
-                  });
-                  return;
-                }
-
-                setState(() {
-                  isValidating = true;
-                  validationError = null;
-                  isValidated = false;
-                });
-
-                try {
-                  final paymentProvider = context.read<PaymentProvider>();
-                  final success = await paymentProvider.addCard(cardDetails);
-
-                  if (success && context.mounted) {
-                    setState(() {
-                      isValidating = false;
-                      isValidated = true;
-                      validationError = null;
-                    });
-
-                    // Show success message and close after a brief delay
-                    await Future.delayed(const Duration(milliseconds: 500));
-                    if (context.mounted) {
-                      Navigator.pop(context);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text(
-                            'Card validated and saved successfully!',
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          backgroundColor: const Color(0xFF03930A),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8.0),
-                          ),
-                          margin: const EdgeInsets.all(16.0),
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                    }
-                  } else if (context.mounted) {
-                    setState(() {
-                      isValidating = false;
-                      isValidated = false;
-                      validationError = paymentProvider.errorMessage ??
-                          'Card validation failed. Please check your card details.';
-                    });
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    setState(() {
-                      isValidating = false;
-                      isValidated = false;
-                      validationError =
-                          'Card validation failed: ${e.toString()}';
-                    });
-                  }
-                }
-              }
-
-              return SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  autovalidateMode: AutovalidateMode.onUserInteraction,
-                  key: formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'Add Payment Card',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleLarge
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close),
-                            onPressed: () => Navigator.pop(context),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Validate and save new card for future use',
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onSurfaceVariant,
-                            ),
-                      ),
-                      const SizedBox(height: 24),
-                      TextFormField(
-                        controller: cardNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Name on card',
-                        ),
-                        onChanged: (_) => clearValidationState(),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Enter the cardholder name';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: cardNumberController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(23),
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'Card number',
-                        ),
-                        onChanged: (value) {
-                          final formatted = formatCardNumber(value);
-                          if (formatted != value) {
-                            final selection = TextSelection.collapsed(
-                                offset: formatted.length);
-                            cardNumberController.value = TextEditingValue(
-                                text: formatted, selection: selection);
-                          }
-                          setState(() {
-                            cardBrand = detectCardBrand(value);
-                          });
-                          clearValidationState();
-                        },
-                        validator: validateCardNumber,
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Chip(
-                            label: Text(
-                                detectCardBrand(cardNumberController.text)
-                                    .label),
-                            avatar: const Icon(Icons.credit_card, size: 18),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'CVV: ${cvvExpectedLength(cardBrand)} digits',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelMedium
-                                ?.copyWith(color: Theme.of(context).hintColor),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: expiryController,
-                              decoration: const InputDecoration(
-                                labelText: 'Expiry (MM/YY)',
-                              ),
-                              inputFormatters: [
-                                expiryInputFormatter(),
-                                LengthLimitingTextInputFormatter(5),
-                              ],
-                              onChanged: (value) {
-                                final formatted = formatExpiryInput(value);
-                                if (formatted != value) {
-                                  final selection = TextSelection.collapsed(
-                                      offset: formatted.length);
-                                  expiryController.value = TextEditingValue(
-                                    text: formatted,
-                                    selection: selection,
-                                  );
-                                }
-                                clearValidationState();
-                              },
-                              validator: validateExpiry,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: TextFormField(
-                              controller: cvvController,
-                              keyboardType: TextInputType.number,
-                              decoration: const InputDecoration(
-                                labelText: 'CVV',
-                              ),
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                                LengthLimitingTextInputFormatter(4),
-                              ],
-                              onChanged: (_) => clearValidationState(),
-                              validator: (value) => validateCvv(value,
-                                  detectCardBrand(cardNumberController.text)),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        controller: zipController,
-                        keyboardType: TextInputType.number,
-                        inputFormatters: [
-                          zipInputFormatter(),
-                          LengthLimitingTextInputFormatter(10),
-                        ],
-                        decoration: const InputDecoration(
-                          labelText: 'ZIP code',
-                        ),
-                        onChanged: (_) => clearValidationState(),
-                        validator: validateZip,
-                      ),
-                      const SizedBox(height: 16),
-                      CheckboxListTile(
-                        contentPadding: EdgeInsets.zero,
-                        value: isPrimary,
-                        onChanged: (value) {
-                          if (value != null) {
-                            setState(() => isPrimary = value);
-                          }
-                        },
-                        title: const Text('Set as primary card'),
-                        subtitle: const Text(
-                          'This card will be used as your default payment method',
-                          style: TextStyle(fontSize: 12),
-                        ),
-                      ),
-                      if (validationError != null) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.errorContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.error_outline,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onErrorContainer,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  validationError!,
-                                  style: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onErrorContainer,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      if (isValidated) ...[
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color:
-                                Theme.of(context).colorScheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onPrimaryContainer,
-                                size: 20,
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Card validated and saved successfully!',
-                                  style: TextStyle(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onPrimaryContainer,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton(
-                          onPressed:
-                              isValidating ? null : handleValidateAndSave,
-                          style: FilledButton.styleFrom(
-                            minimumSize: const Size(double.infinity, 48),
-                            backgroundColor: const Color(0xFF03930A),
-                          ),
-                          child: isValidating
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white),
-                                  ),
-                                )
-                              : const Text(
-                                  'Validate & Save Card',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
-              );
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(dialogContext);
+              await squareConfig.load(force: true);
             },
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF03930A),
+            ),
+            child: const Text('Retry'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SquareUnavailableBanner extends StatelessWidget {
+  const _SquareUnavailableBanner({
+    required this.isLoading,
+    required this.onRetry,
+    this.lastError,
+  });
+
+  final bool isLoading;
+  final Object? lastError;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.errorContainer.withOpacity(0.35),
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline,
+              size: 20,
+              color: Theme.of(context).colorScheme.onErrorContainer,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isLoading
+                        ? 'Loading Square payment settings…'
+                        : 'Square wallet unavailable',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    isLoading
+                        ? 'Please wait before adding a card.'
+                        : 'Cards are saved securely with Square. '
+                              'Raw card entry is no longer supported in the app.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            if (!isLoading)
+              TextButton(onPressed: onRetry, child: const Text('Retry')),
+          ],
         ),
       ),
     );
@@ -488,12 +234,14 @@ class _PaymentCardTile extends StatelessWidget {
     required this.expirationDate,
     required this.isPrimary,
     required this.onMakePrimary,
+    this.isSquareCard = false,
   });
 
   final String cardNumber;
   final String cardOwnerName;
   final String expirationDate;
   final bool isPrimary;
+  final bool isSquareCard;
   final VoidCallback onMakePrimary;
 
   @override
@@ -502,61 +250,89 @@ class _PaymentCardTile extends StatelessWidget {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       margin: const EdgeInsets.only(bottom: 16),
-      color:
-          isPrimary ? colorScheme.primary : colorScheme.surfaceContainerHighest,
+      color: isPrimary
+          ? colorScheme.primary
+          : colorScheme.surfaceContainerHighest,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  cardNumber,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        color: isPrimary
-                            ? colorScheme.onPrimary
-                            : colorScheme.onSurfaceVariant,
-                        letterSpacing: 2,
-                      ),
+                Expanded(
+                  child: Text(
+                    cardNumber,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      color: isPrimary
+                          ? colorScheme.onPrimary
+                          : colorScheme.onSurfaceVariant,
+                      letterSpacing: 1,
+                    ),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Icon(
                   Icons.credit_card,
-                  color:
-                      isPrimary ? colorScheme.onPrimary : colorScheme.primary,
-                )
+                  color: isPrimary
+                      ? colorScheme.onPrimary
+                      : colorScheme.primary,
+                ),
               ],
             ),
             const SizedBox(height: 24),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('CARDHOLDER'),
-                    Text(
-                      cardOwnerName,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: isPrimary
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                  ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'CARDHOLDER',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: isPrimary
+                              ? colorScheme.onPrimary.withOpacity(0.85)
+                              : colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text(
+                        cardOwnerName,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(
+                              color: isPrimary
+                                  ? colorScheme.onPrimary
+                                  : colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 12),
                 Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    const Text('EXPIRY'),
+                    Text(
+                      'EXPIRY',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: isPrimary
+                            ? colorScheme.onPrimary.withOpacity(0.85)
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                     Text(
                       expirationDate,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            color: isPrimary
-                                ? colorScheme.onPrimary
-                                : colorScheme.onSurfaceVariant,
-                          ),
+                        color: isPrimary
+                            ? colorScheme.onPrimary
+                            : colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ],
                 ),

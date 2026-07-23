@@ -5,6 +5,7 @@ class UserModel {
     required this.email,
     required this.phoneNumber,
     this.role,
+    this.createdAt,
   });
 
   final int userId;
@@ -12,6 +13,7 @@ class UserModel {
   final String email;
   final String phoneNumber;
   final String? role;
+  final DateTime? createdAt;
 
   factory UserModel.fromJson(Map<String, dynamic> json) {
     return UserModel(
@@ -20,6 +22,7 @@ class UserModel {
       email: json['email']?.toString() ?? '',
       phoneNumber: json['phoneNumber']?.toString() ?? '',
       role: json['role']?.toString(),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
   }
 
@@ -30,6 +33,7 @@ class UserModel {
       'email': email,
       'phoneNumber': phoneNumber,
       if (role != null) 'role': role,
+      if (createdAt != null) 'createdAt': createdAt!.toIso8601String(),
     };
   }
 

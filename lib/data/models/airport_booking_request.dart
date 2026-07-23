@@ -1,6 +1,7 @@
 import 'card_details.dart';
 import 'payment_method_type.dart';
 import 'selected_extra_option.dart';
+import 'square_payment_payload.dart';
 
 class AirportBookingRequest {
   AirportBookingRequest({
@@ -34,7 +35,10 @@ class AirportBookingRequest {
     required this.paymentMethod,
     this.paymentDetailId,
     this.cardDetails,
+    this.square,
+    this.squareCardId,
     this.specialInstructions,
+    this.sidePicks = const <Map<String, dynamic>>[],
   });
 
   final String tripType;
@@ -67,7 +71,10 @@ class AirportBookingRequest {
   final PaymentMethodType paymentMethod;
   final int? paymentDetailId;
   final CardDetails? cardDetails;
+  final SquarePaymentPayload? square;
+  final String? squareCardId;
   final String? specialInstructions;
+  final List<Map<String, dynamic>> sidePicks;
 
   Map<String, dynamic> toJson() {
     final data = <String, dynamic>{
@@ -121,12 +128,26 @@ class AirportBookingRequest {
     if (extraOptions.isNotEmpty) {
       data['extraOptions'] = extraOptions.map((e) => e.toJson()).toList();
     }
+    if (sidePicks.isNotEmpty) {
+      data['sidePicks'] = sidePicks;
+    }
     if (paymentDetailId != null &&
         paymentMethod == PaymentMethodType.existingCard) {
       data['paymentDetailId'] = paymentDetailId;
     }
+    if (paymentMethod == PaymentMethodType.squareSavedCard) {
+      if (paymentDetailId != null) {
+        data['paymentDetailId'] = paymentDetailId;
+      }
+      if (squareCardId != null && squareCardId!.isNotEmpty) {
+        data['squareCardId'] = squareCardId;
+      }
+    }
     if (cardDetails != null && paymentMethod == PaymentMethodType.newCard) {
       data['cardDetails'] = cardDetails!.toJson();
+    }
+    if (square != null && paymentMethod == PaymentMethodType.squareNewCard) {
+      data['square'] = square!.toJson();
     }
     if (specialInstructions != null && specialInstructions!.isNotEmpty) {
       data['specialInstructions'] = specialInstructions;

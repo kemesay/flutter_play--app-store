@@ -43,7 +43,7 @@ class _BookingRoutePreviewMapState extends State<BookingRoutePreviewMap> {
 
   @override
   void dispose() {
-    _controller?.dispose();
+    _controller = null;
     super.dispose();
   }
 

@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -24,10 +26,7 @@ class ApiClient {
   }) async {
     final uri = _buildUri(path, queryParameters);
     final headers = await _buildHeaders(authenticated: authenticated);
-    final response = await _httpClient
-        .get(uri, headers: headers)
-        .timeout(AppConfig.requestTimeout);
-    return _handleResponse(response);
+    return _execute(() => _httpClient.get(uri, headers: headers));
   }
 
   Future<dynamic> post(
@@ -38,10 +37,9 @@ class ApiClient {
   }) async {
     final uri = _buildUri(path, queryParameters);
     final headers = await _buildHeaders(authenticated: authenticated);
-    final response = await _httpClient
-        .post(uri, headers: headers, body: _encodeBody(body))
-        .timeout(AppConfig.requestTimeout);
-    return _handleResponse(response);
+    return _execute(
+      () => _httpClient.post(uri, headers: headers, body: _encodeBody(body)),
+    );
   }
 
   Future<dynamic> put(
@@ -52,10 +50,9 @@ class ApiClient {
   }) async {
     final uri = _buildUri(path, queryParameters);
     final headers = await _buildHeaders(authenticated: authenticated);
-    final response = await _httpClient
-        .put(uri, headers: headers, body: _encodeBody(body))
-        .timeout(AppConfig.requestTimeout);
-    return _handleResponse(response);
+    return _execute(
+      () => _httpClient.put(uri, headers: headers, body: _encodeBody(body)),
+    );
   }
 
   Future<dynamic> patch(
@@ -66,10 +63,9 @@ class ApiClient {
   }) async {
     final uri = _buildUri(path, queryParameters);
     final headers = await _buildHeaders(authenticated: authenticated);
-    final response = await _httpClient
-        .patch(uri, headers: headers, body: _encodeBody(body))
-        .timeout(AppConfig.requestTimeout);
-    return _handleResponse(response);
+    return _execute(
+      () => _httpClient.patch(uri, headers: headers, body: _encodeBody(body)),
+    );
   }
 
   Future<dynamic> delete(
@@ -80,10 +76,45 @@ class ApiClient {
   }) async {
     final uri = _buildUri(path, queryParameters);
     final headers = await _buildHeaders(authenticated: authenticated);
-    final response = await _httpClient
-        .delete(uri, headers: headers, body: _encodeBody(body))
-        .timeout(AppConfig.requestTimeout);
-    return _handleResponse(response);
+    return _execute(
+      () => _httpClient.delete(uri, headers: headers, body: _encodeBody(body)),
+    );
+  }
+
+  /// Runs a request, decodes the response, and turns every failure mode —
+  /// HTTP error status, timeout, no connection, or anything unexpected —
+  /// into the same `ApiException` type with a clean, user-safe message.
+  /// Screens only ever need to handle one exception type.
+  Future<dynamic> _execute(
+    Future<http.Response> Function() sendRequest,
+  ) async {
+    try {
+      final response = await sendRequest().timeout(AppConfig.requestTimeout);
+      return _handleResponse(response);
+    } on ApiException {
+      rethrow;
+    } on TimeoutException {
+      throw const ApiException(
+        message:
+            'The request took too long to respond. Please check your connection and try again.',
+      );
+    } on SocketException {
+      throw const ApiException(
+        message:
+            'Unable to reach the server. Please check your connection and try again.',
+      );
+    } on http.ClientException {
+      throw const ApiException(
+        message: 'A network error occurred. Please try again.',
+      );
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('Unexpected network error: $error');
+      }
+      throw const ApiException(
+        message: 'Something went wrong. Please try again.',
+      );
+    }
   }
 
   Uri _buildUri(String path, Map<String, dynamic>? queryParameters) {

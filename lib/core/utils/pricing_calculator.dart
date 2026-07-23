@@ -65,8 +65,9 @@ class PricingCalculator {
     }
 
     // Match website logic: minimumStartFee * (2 if round trip)
-    final totalMinFee =
-        isRoundTrip ? car.minimumStartFee * 2 : car.minimumStartFee;
+    final totalMinFee = isRoundTrip
+        ? car.minimumStartFee * 2
+        : car.minimumStartFee;
 
     // Base fare for gratuity calculation (includes both vehicle fee and minimum fee)
     final baseFare = _twoDecimals(vehicleFeeTotal + totalMinFee);
@@ -81,7 +82,8 @@ class PricingCalculator {
 
     // Match website logic: totalFee = vehicleFee + totalMinFee + extras + additionalStop
     final subtotal = _twoDecimals(
-        vehicleFeeTotal + totalMinFee + extras + additionalStopPrice);
+      vehicleFeeTotal + totalMinFee + extras + additionalStopPrice,
+    );
 
     // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
     final gratuityAmount = _calculateGratuity(baseFare, gratuity);
@@ -125,8 +127,9 @@ class PricingCalculator {
     }
 
     // Match website logic: minimumStartFee * (2 if round trip)
-    final totalMinFee =
-        isRoundTrip ? car.minimumStartFee * 2 : car.minimumStartFee;
+    final totalMinFee = isRoundTrip
+        ? car.minimumStartFee * 2
+        : car.minimumStartFee;
 
     // Base fare for gratuity calculation (includes both vehicle fee and minimum fee)
     final baseFare = _twoDecimals(vehicleFeeTotal + totalMinFee);
@@ -235,10 +238,7 @@ class PricingCalculator {
     return _twoDecimals(total);
   }
 
-  static double _calculateGratuity(
-    double baseFare,
-    GratuityModel? gratuity,
-  ) {
+  static double _calculateGratuity(double baseFare, GratuityModel? gratuity) {
     if (gratuity == null || gratuity.percentage <= 0) {
       return 0;
     }

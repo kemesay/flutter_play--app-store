@@ -1,7 +1,7 @@
 part of 'package:oda_black_car_service/ui/screens/home/pages/book_ride/book_ride_page.dart';
 
 class _PointToPointForm extends StatefulWidget {
-  const _PointToPointForm();
+  const _PointToPointForm({super.key});
 
   @override
   State<_PointToPointForm> createState() => _PointToPointFormState();
@@ -108,11 +108,17 @@ class _PointToPointFormState extends State<_PointToPointForm> {
 
   PaymentMethodType _paymentMethod = PaymentMethodType.newCard;
   int? _selectedPaymentDetailId;
+  String? _selectedSquareCardId;
   CardDetails? _cardDetails;
+  SquarePaymentPayload? _squarePayload;
+  double? _squareTokenizedAtTotal;
   final List<SelectedExtraOption> _selectedExtras = [];
   double? _routeDistanceInMiles;
   String? _routeDurationText;
   List<LatLng>? _routePolyline;
+
+  final List<PlaceDetail?> _sidePickDetails = [];
+  final List<TextEditingController> _sidePickControllers = [];
 
   bool get _isRoundTrip => _tripType == 'Round-Trip';
   TimeOfDay? get _pickupTimeOfDay => _pickupDateTime != null
@@ -147,6 +153,9 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     _pickupTimeFocusNode.dispose();
     _returnDateFocusNode.dispose();
     _returnTimeFocusNode.dispose();
+    for (final c in _sidePickControllers) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -327,7 +336,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
           : selectedDateTime;
 
       if (selectedDateTime.isBefore(minReturnTime)) {
-      CustomSnackbar.showInfo(
+        CustomSnackbar.showInfo(
           context,
           'Return pickup must be at least 1 hour after pickup time. Time adjusted automatically.',
         );
@@ -434,6 +443,23 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       additionalStop: selectedAdditionalStop,
     );
     final pricingSubtitle = _buildPointToPointPricingSubtitle(distanceInMiles);
+    final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
+    final consentReady = isBookingPaymentReadyForConsent(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
+    final consentHint = bookingPaymentConsentHint(
+      squareEnabled: squareEnabled,
+      paymentMethod: _paymentMethod,
+      squarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      currentBookingTotal: priceBreakdown?.total,
+      legacyCardDetails: _cardDetails,
+    );
 
     final vehicleClassOptions = _buildVehicleClassOptions(catalog.cars);
     final filteredCars = _filterCars(catalog.cars);
@@ -521,11 +547,80 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                   }
                 },
               ),
-              const SizedBox(height: 16),
-              _buildRouteOverviewCard(calculatedDistance),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '2. Trip Type',
+                title: '2. Side Pick / Detour Stops',
+                subtitle: 'Add off-route detours — fare adjusts by distance',
+              ),
+              const SizedBox(height: 8),
+              ..._sidePickDetails.asMap().entries.map((entry) {
+                final idx = entry.key;
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: _LocationPickerField(
+                          label: 'Detour stop ${idx + 1}',
+                          controller: _sidePickControllers[idx],
+                          placeService: _placeService,
+                          sessionToken: _sessionToken,
+                          onPlaceSelected: (detail) {
+                            setState(() {
+                              _sidePickDetails[idx] = detail;
+                            });
+                            _fetchRouteDistance();
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        onPressed: () {
+                          setState(() {
+                            _sidePickDetails.removeAt(idx);
+                            _sidePickControllers[idx].dispose();
+                            _sidePickControllers.removeAt(idx);
+                          });
+                          _fetchRouteDistance();
+                        },
+                        icon: const Icon(Icons.remove_circle_outline),
+                        color: Colors.red.shade400,
+                        tooltip: 'Remove stop',
+                      ),
+                    ],
+                  ),
+                );
+              }),
+              OutlinedButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _sidePickDetails.add(null);
+                    _sidePickControllers.add(TextEditingController());
+                  });
+                },
+                icon: const Icon(Icons.add_location_alt_outlined),
+                label: const Text('Add Detour Stop'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFFF59E0B),
+                  side: const BorderSide(color: Color(0xFFF59E0B)),
+                  minimumSize: const Size(double.infinity, 44),
+                ),
+              ),
+              if (_sidePickDetails.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    'Detour stops add extra driving distance — fare updates automatically.',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.grey),
+                  ),
+                ),
+              const SizedBox(height: 24),
+              const _ProfessionalSectionHeader(
+                title: '3. Trip Type',
                 subtitle: 'Select your preferred journey',
               ),
               const SizedBox(height: 12),
@@ -540,9 +635,11 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                   });
                 },
               ),
+              const SizedBox(height: 16),
+              _buildRouteOverviewCard(calculatedDistance),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '3. Vehicle Selection',
+                title: '4. Vehicle Selection',
                 subtitle: 'Choose your preferred vehicle',
               ),
               const SizedBox(height: 12),
@@ -646,7 +743,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ],
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '4. Schedule',
+                title: '5. Schedule',
                 subtitle: 'Select your preferred timing',
               ),
               const SizedBox(height: 12),
@@ -708,7 +805,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '5. Trip Notes',
+                title: '6. Trip Notes',
                 subtitle: 'Any special instructions for your driver',
               ),
               const SizedBox(height: 12),
@@ -719,7 +816,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '6. Additional Stop',
+                title: '7. Additional Stop',
                 subtitle: 'Need an extra stop along the way?',
               ),
               const SizedBox(height: 8),
@@ -774,7 +871,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ],
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '7. Passenger Information',
+                title: '8. Passenger Information',
                 subtitle: 'Who is taking this trip?',
               ),
               const SizedBox(height: 12),
@@ -834,7 +931,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '8. Gratuity',
+                title: '9. Gratuity',
                 subtitle: 'Show appreciation for excellent service',
               ),
               const SizedBox(height: 8),
@@ -858,26 +955,44 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 ),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '9. Payment Method',
+                title: '10. Payment Method',
                 subtitle: 'Secure payment options',
               ),
               const SizedBox(height: 8),
-              _PaymentMethodSection(
+              _BookingPaymentMethodPicker(
                 paymentProvider: paymentProvider,
+                paymentMethod: _paymentMethod,
+                selectedPaymentDetailId: _selectedPaymentDetailId,
+                selectedSquareCardId: _selectedSquareCardId,
+                verifiedSquarePayload: _squarePayload,
+                squareTokenizedAtTotal: _squareTokenizedAtTotal,
+                bookingTotal: priceBreakdown?.total,
+                cardholderNameHint: _passengerNameController.text.trim(),
+                onSquareVerified: (payload, total) {
+                  setState(() {
+                    _squarePayload = payload;
+                    _squareTokenizedAtTotal = total;
+                  });
+                },
+                onSquareVerificationCleared: () {
+                  setState(() {
+                    _squarePayload = null;
+                    _squareTokenizedAtTotal = null;
+                    if (!consentReady) _agreedToTerms = false;
+                  });
+                },
                 onMethodChanged: (method) {
                   setState(() {
                     _paymentMethod = method;
-                    // Clear selections when switching methods
                     if (method != PaymentMethodType.existingCard) {
                       _selectedPaymentDetailId = null;
+                      _selectedSquareCardId = null;
                     }
                     if (method != PaymentMethodType.newCard) {
                       _cardDetails = null;
                     }
                   });
                 },
-                paymentMethod: _paymentMethod,
-                selectedPaymentDetailId: _selectedPaymentDetailId,
                 onExistingCardSelected: (id) {
                   setState(() {
                     _selectedPaymentDetailId = id;
@@ -886,6 +1001,34 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 onNewCardSaved: (card) {
                   setState(() {
                     _cardDetails = card;
+                  });
+                },
+                onSquareMethodChanged: (method) {
+                  setState(() {
+                    _paymentMethod = method;
+                    if (method != PaymentMethodType.squareSavedCard) {
+                      _selectedPaymentDetailId = null;
+                      _selectedSquareCardId = null;
+                    }
+                    if (method != PaymentMethodType.squareNewCard) {
+                      _squarePayload = null;
+                      _squareTokenizedAtTotal = null;
+                    }
+                    _cardDetails = null;
+                  });
+                },
+                onSquareSavedCardSelected: (card) {
+                  setState(() {
+                    applySquareSavedCardSelection(
+                      setPaymentMethod: (m) => _paymentMethod = m,
+                      setPaymentDetailId: (id) => _selectedPaymentDetailId = id,
+                      setSquareCardId: (id) => _selectedSquareCardId = id,
+                      setCardDetails: (c) => _cardDetails = c,
+                      setSquarePayload: (p) => _squarePayload = p,
+                      setSquareTokenizedAtTotal: (t) =>
+                          _squareTokenizedAtTotal = t,
+                      card: card,
+                    );
                   });
                 },
               ),
@@ -898,18 +1041,48 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ],
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '10. Confirmation',
+                title: '11. Confirmation',
                 subtitle: 'Review and confirm your booking',
               ),
+              if (consentHint != null) ...[
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.info_outline,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          consentHint,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               _StyledCheckbox(
                 title:
                     'I confirm the trip details and authorize ODA Black Car Service to process payment for this booking.',
                 value: _agreedToTerms,
-                onChanged: (value) {
-                  setState(() {
-                    _agreedToTerms = value ?? false;
-                  });
-                },
+                onChanged: consentReady
+                    ? (value) {
+                        setState(() {
+                          _agreedToTerms = value ?? false;
+                        });
+                      }
+                    : null,
               ),
               if (bookingProvider.successMessage != null)
                 Container(
@@ -1126,6 +1299,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 routePolyline: _routePolyline,
                 routeDistance: routeDistance,
                 routeDuration: _routeDurationText,
+                waypoints: _sidePickDetails.whereType<PlaceDetail>().toList(),
               ),
             ),
           ),
@@ -1190,9 +1364,14 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     if (_pickupDetail == null || _dropoffDetail == null) return;
 
     try {
+      final waypoints = _sidePickDetails
+          .whereType<PlaceDetail>()
+          .map((d) => LatLng(d.lat, d.lng))
+          .toList();
       final route = await _directionsService.fetchRoute(
         origin: LatLng(_pickupDetail!.lat, _pickupDetail!.lng),
         destination: LatLng(_dropoffDetail!.lat, _dropoffDetail!.lng),
+        waypoints: waypoints,
       );
 
       if (mounted && route != null) {
@@ -1245,10 +1424,11 @@ class _PointToPointFormState extends State<_PointToPointForm> {
   }
 
   bool _isCaliforniaPickup(PlaceDetail detail) {
-    if (_isCaliforniaLocation(detail)) {
+    if (_isAllowedPickupState(detail)) {
       return true;
     }
-    _showSnackbar('Pickup address must be located in California, USA.');
+    _showSnackbar(
+        'Pickup address must be located in California or Washington, USA.');
     return false;
   }
 
@@ -1334,23 +1514,59 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       return;
     }
 
-    if (_paymentMethod == PaymentMethodType.primaryCard) {
-      final primaryCard = context.read<PaymentProvider>().primaryCard;
-      if (primaryCard == null) {
-        _showSnackbar('You do not have a primary card on file.');
+    final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+    final bookingTotal = PricingCalculator.pointToPoint(
+      car: _selectedCarId != null
+          ? context.read<CatalogProvider>().findCarById(_selectedCarId!)
+          : null,
+      distanceInMiles: distance,
+      gratuity: _findGratuity(
+        context.read<CatalogProvider>(),
+        _selectedGratuityId,
+      ),
+      isRoundTrip: _isRoundTrip,
+      extraCatalog: context.read<CatalogProvider>().extraOptions,
+      selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      additionalStop: _findAdditionalStop(
+        context.read<CatalogProvider>(),
+        _selectedAdditionalStopId,
+      ),
+    )?.total;
+
+    if (squareEnabled) {
+      final paymentError = validateBookingPaymentSelection(
+        paymentMethod: _paymentMethod,
+        paymentDetailId: _selectedPaymentDetailId,
+        squareCardId: _selectedSquareCardId,
+        cardDetails: _cardDetails,
+        primaryCard: context.read<PaymentProvider>().primaryCard,
+        squarePayload: _squarePayload,
+        squareTokenizedAtTotal: _squareTokenizedAtTotal,
+        currentBookingTotal: bookingTotal,
+        squareEnabled: true,
+      );
+      if (paymentError != null) {
+        _showSnackbar(paymentError);
         return;
       }
-      // PRIMARY_CARD should not include paymentDetailId - backend will use primary card automatically
-      _selectedPaymentDetailId = null;
-    } else if (_paymentMethod == PaymentMethodType.existingCard) {
-      if (_selectedPaymentDetailId == null) {
-        _showSnackbar('Select a saved card to proceed.');
-        return;
-      }
-    } else if (_paymentMethod == PaymentMethodType.newCard) {
-      if (_cardDetails == null) {
-        _showSnackbar('Enter payment card details to confirm booking.');
-        return;
+    } else {
+      if (_paymentMethod == PaymentMethodType.primaryCard) {
+        final primaryCard = context.read<PaymentProvider>().primaryCard;
+        if (primaryCard == null) {
+          _showSnackbar('You do not have a primary card on file.');
+          return;
+        }
+        _selectedPaymentDetailId = null;
+      } else if (_paymentMethod == PaymentMethodType.existingCard) {
+        if (_selectedPaymentDetailId == null) {
+          _showSnackbar('Select a saved card to proceed.');
+          return;
+        }
+      } else if (_paymentMethod == PaymentMethodType.newCard) {
+        if (_cardDetails == null) {
+          _showSnackbar('Enter payment card details to confirm booking.');
+          return;
+        }
       }
     }
 
@@ -1410,6 +1626,24 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       paymentDetailId: _selectedPaymentDetailId,
       cardDetails:
           _paymentMethod == PaymentMethodType.newCard ? _cardDetails : null,
+      square: _paymentMethod == PaymentMethodType.squareNewCard
+          ? _squarePayload
+          : null,
+      squareCardId: _paymentMethod == PaymentMethodType.squareSavedCard
+          ? _selectedSquareCardId
+          : null,
+      sidePicks: _sidePickDetails
+          .whereType<PlaceDetail>()
+          .toList()
+          .asMap()
+          .entries
+          .map((e) => <String, dynamic>{
+                'address': e.value.formattedAddress,
+                'latitude': e.value.lat,
+                'longitude': e.value.lng,
+                'sortOrder': e.key,
+              })
+          .toList(),
     );
 
     final success = await bookingProvider.submitPointToPointBooking(
@@ -1418,7 +1652,11 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     );
 
     if (success && mounted) {
-      CustomSnackbar.showSuccess(context, 'Your booking request has been submitted.');
+      CustomSnackbar.showSuccess(
+        context,
+        bookingProvider.successMessage ??
+            'Your booking request has been submitted.',
+      );
       setState(() {
         _selectedExtras.clear();
         _instructionsController.clear();
@@ -1833,12 +2071,12 @@ class _StyledTextField extends StatelessWidget {
 class _StyledCheckbox extends StatelessWidget {
   final String title;
   final bool value;
-  final ValueChanged<bool?> onChanged;
+  final ValueChanged<bool?>? onChanged;
 
   const _StyledCheckbox({
     required this.title,
     required this.value,
-    required this.onChanged,
+    this.onChanged,
   });
 
   @override

@@ -39,6 +39,33 @@ class BookingHistoryItem {
   final String? carImageUrl;
   final Map<String, dynamic> rawData;
 
+  BookingHistoryItem copyWith({
+    String? paymentStatus,
+    String? bookingStatus,
+  }) {
+    return BookingHistoryItem(
+      type: type,
+      id: id,
+      confirmationNumber: confirmationNumber,
+      paymentStatus: paymentStatus ?? this.paymentStatus,
+      bookingStatus: bookingStatus ?? this.bookingStatus,
+      paymentMethod: paymentMethod,
+      pickupDateTime: pickupDateTime,
+      returnPickupDateTime: returnPickupDateTime,
+      pickupAddress: pickupAddress,
+      dropoffAddress: dropoffAddress,
+      totalFee: totalFee,
+      tripType: tripType,
+      passengerName: passengerName,
+      carImageUrl: carImageUrl,
+      rawData: {
+        ...rawData,
+        if (paymentStatus != null) 'paymentStatus': paymentStatus,
+        if (bookingStatus != null) 'bookingStatus': bookingStatus,
+      },
+    );
+  }
+
   String get displayTitle {
     switch (type) {
       case BookingType.pointToPoint:

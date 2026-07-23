@@ -115,7 +115,22 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     await _authService.logout();
     _currentUser = null;
-    notifyListeners();
+    _scheduleAuthStateNotify();
+  }
+
+  /// Notifies listeners (and therefore swaps _AppEntryPoint's entire screen,
+  /// since this only ever follows an `isAuthenticated`-flipping change) on a
+  /// delay long enough to outlast any confirmation/loading dialog the
+  /// caller might still be closing — deliberately NOT awaited, so the
+  /// method that calls this (logout/deleteAccount) can return to its caller
+  /// immediately and finish popping its own dialogs first. Without this,
+  /// swapping the screen while a dialog is still open/mid-transition
+  /// crashes with "'_dependents.isEmpty': is not true" or, worse, leaves an
+  /// orphaned dialog with no Directionality ancestor at all.
+  void _scheduleAuthStateNotify() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      notifyListeners();
+    });
   }
 
   /// Deletes the current user's account permanently.
@@ -126,13 +141,17 @@ class AuthProvider extends ChangeNotifier {
     try {
       await _authService.deleteAccount();
       _currentUser = null;
-      _setError(null);
+      _errorMessage = null;
+      _isLoading = false;
+      // Deferred, not synchronous: this flips isAuthenticated, and the
+      // caller (MyAccountPage) still has its own loading dialog open at
+      // this exact point — see _scheduleAuthStateNotify.
+      _scheduleAuthStateNotify();
       return true;
     } catch (error) {
+      _isLoading = false;
       _setError(error.toString());
       return false;
-    } finally {
-      _setLoadingState(false);
     }
   }
 
@@ -149,15 +168,19 @@ class AuthProvider extends ChangeNotifier {
         currentPassword: currentPassword,
         newPassword: newPassword,
       );
-      _setError(null);
-      // Log out user after successful password change
+      _errorMessage = null;
+      // logout() clears _currentUser and schedules a deferred notify that
+      // covers this whole state change, including isLoading below — don't
+      // add a second, synchronous notifyListeners() after it here, or it
+      // fires the isAuthenticated-flipping rebuild too early (see
+      // _scheduleAuthStateNotify).
       await logout();
+      _isLoading = false;
       return true;
     } catch (error) {
+      _isLoading = false;
       _setError(error.toString());
       return false;
-    } finally {
-      _setLoadingState(false);
     }
   }
 
