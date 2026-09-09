@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../../../../core/utils/booking_square_payment.dart';
+import '../../../../../../core/utils/card_validation_utils.dart';
+import '../../../../../../core/utils/name_validator.dart';
 import '../../../../../../data/models/square_payment_payload.dart';
 import 'square_step_label.dart';
 
@@ -67,15 +69,10 @@ class _SquareCheckoutNewCardPanelState extends State<SquareCheckoutNewCardPanel>
   }
 
   String? _validateBilling() {
-    final name = _nameController.text.trim();
-    final zip = _zipController.text.trim();
-    if (name.length < 2) {
-      return 'Cardholder name is required';
-    }
-    if (!RegExp(r'^\d{5}(-\d{4})?$').hasMatch(zip)) {
-      return 'Enter a valid US ZIP code';
-    }
-    return null;
+    final nameError =
+        NameValidator.validateCardholderName(_nameController.text);
+    if (nameError != null) return nameError;
+    return validateZip(_zipController.text);
   }
 
   void _invalidateVerification() {
@@ -179,6 +176,8 @@ class _SquareCheckoutNewCardPanelState extends State<SquareCheckoutNewCardPanel>
                   labelText: 'Billing ZIP',
                 ),
                 keyboardType: TextInputType.number,
+                inputFormatters: [zipInputFormatter()],
+                maxLength: 10,
                 onChanged: (_) => _invalidateVerification(),
               );
 

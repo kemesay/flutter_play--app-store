@@ -289,10 +289,9 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
 
   PlaceDetail? _airportPlaceDetail() => _airportLocationDetail;
 
-  bool _isValidCaliforniaAirportSelection(PlaceDetail detail) {
-    if (!_isAllowedPickupState(detail)) {
-      _showSnackbar(
-          'Airport/terminal pickup must be in California or Washington.');
+  bool _isValidAirportPickupSelection(PlaceDetail detail) {
+    if (!_isUnitedStatesLocation(detail)) {
+      _showSnackbar('Airport/terminal pickup must be in the USA.');
       return false;
     }
     return true;
@@ -486,8 +485,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         children: [
           const _ProfessionalSectionHeader(
             title: '1. Pickup & Drop-off Locations',
-            subtitle:
-                'Airport pickup in California or Washington, drop-off across USA',
+            subtitle: 'Airport pickup and drop-off anywhere in the USA',
           ),
           const SizedBox(height: 12),
           _LocationPickerField(
@@ -505,7 +503,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
               });
             },
             onPlaceSelected: (detail) {
-              if (!_isValidCaliforniaAirportSelection(detail)) return;
+              if (!_isValidAirportPickupSelection(detail)) return;
               setState(() {
                 _airportLocationDetail = detail;
                 _routeDistanceInMiles = null;
@@ -987,12 +985,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           _StyledTextField(
             label: 'Passenger full name',
             controller: _passengerNameController,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Passenger name is required';
-              }
-              return null;
-            },
+            validator: NameValidator.validate,
             enabled:
                 _bookingFor != 'Myself' || authProvider.currentUser == null,
           ),
@@ -1074,7 +1067,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
             verifiedSquarePayload: _squarePayload,
             squareTokenizedAtTotal: _squareTokenizedAtTotal,
             bookingTotal: priceBreakdown?.total,
-            cardholderNameHint: _passengerNameController.text.trim(),
+            cardholderNameHint: NameValidator.format(_passengerNameController.text),
             onSquareVerified: (payload, total) {
               setState(() {
                 _squarePayload = payload;
@@ -1598,7 +1591,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       _showSnackbar('Select airport pickup from suggestions.');
       return;
     }
-    if (!_isValidCaliforniaAirportSelection(_airportLocationDetail!)) {
+    if (!_isValidAirportPickupSelection(_airportLocationDetail!)) {
       return;
     }
     if (_selectedCarId == null) {
@@ -1675,7 +1668,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       return;
     }
 
-    final passengerFullName = _passengerNameController.text.trim();
+    final passengerFullName = NameValidator.format(_passengerNameController.text);
     final passengerEmail = _passengerEmailController.text.trim();
     final passengerPhone = _passengerPhoneController.text.trim();
 

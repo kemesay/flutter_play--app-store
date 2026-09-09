@@ -18,6 +18,7 @@ import 'package:oda_black_car_service/data/models/airport_booking_request.dart';
 import 'package:oda_black_car_service/data/models/airport_pickup_preference_model.dart';
 import 'package:oda_black_car_service/data/models/card_details.dart';
 import 'package:oda_black_car_service/core/utils/card_validation_utils.dart';
+import 'package:oda_black_car_service/core/utils/name_validator.dart';
 import 'package:oda_black_car_service/data/models/car_model.dart';
 import 'package:oda_black_car_service/data/models/extra_option_model.dart';
 import 'package:oda_black_car_service/data/models/gratuity_model.dart';
@@ -58,19 +59,6 @@ bool _isUnitedStatesLocation(PlaceDetail detail) {
   if (code != null) return code == 'US';
   final address = detail.formattedAddress.toLowerCase();
   return address.contains('united states') || address.endsWith(' usa');
-}
-
-// Service area: pickup must originate in California or Washington state;
-// drop-off is unrestricted anywhere in the US (see _isUnitedStatesLocation).
-bool _isAllowedPickupState(PlaceDetail detail) {
-  if (!_isUnitedStatesLocation(detail)) return false;
-  final state = detail.administrativeAreaShortName?.toUpperCase();
-  if (state == 'CA' || state == 'WA') return true;
-  final address = detail.formattedAddress.toLowerCase();
-  return address.contains(', ca') ||
-      address.contains('california') ||
-      address.contains(', wa') ||
-      address.contains('washington');
 }
 
 class BookRidePage extends StatefulWidget {
@@ -1738,7 +1726,7 @@ class _HourlyCharterMapState extends State<_HourlyCharterMap> {
     if (widget.dropoff != null) {
       return LatLng(widget.dropoff!.lat, widget.dropoff!.lng);
     }
-    // Default: Center of US (better for California-focused app)
+    // Default: Center of US, since pickup/drop-off can be anywhere nationwide
     return _kDefaultUSTarget;
   }
 
@@ -3537,13 +3525,9 @@ class _CardFormState extends State<_CardForm> {
             decoration: const InputDecoration(
               labelText: 'Name on card',
             ),
+            textCapitalization: TextCapitalization.words,
             autovalidateMode: AutovalidateMode.onUserInteraction,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Enter the cardholder name';
-              }
-              return null;
-            },
+            validator: NameValidator.validateCardholderName,
             onChanged: (_) => _clearValidationState(),
           ),
           const SizedBox(height: 12),
@@ -3754,7 +3738,7 @@ class _CardFormState extends State<_CardForm> {
       creditCardNumber: widget.cardNumberController.text
           .replaceAll(RegExp(r'\s+'), '')
           .trim(),
-      cardOwnerName: widget.cardNameController.text.trim(),
+      cardOwnerName: NameValidator.format(widget.cardNameController.text),
       expirationDate: widget.expiryController.text.trim(),
       securityCode: widget.cvvController.text.trim(),
       zipCode: widget.zipController.text.trim(),

@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../../../../core/config/square_runtime_config.dart';
 import '../../../../data/services/auth_service.dart';
 import '../../../../data/services/square_payment_service.dart';
+import '../../../../core/utils/card_validation_utils.dart';
+import '../../../../core/utils/name_validator.dart';
 import '../../../../core/utils/payment_status_map.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/payment_provider.dart';
@@ -44,7 +46,8 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
   void initState() {
     super.initState();
     final user = context.read<AuthProvider>().currentUser;
-    _nameController = TextEditingController(text: user?.fullName ?? '');
+    _nameController =
+        TextEditingController(text: NameValidator.format(user?.fullName ?? ''));
     _zipController = TextEditingController();
     WidgetsBinding.instance.addPostFrameCallback((_) => _prefillFromProfile());
   }
@@ -55,7 +58,7 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
       final profile = await AuthService().fetchProfile();
       if (!mounted) return;
       if (_nameController.text.trim().isEmpty && profile.fullName.isNotEmpty) {
-        _nameController.text = profile.fullName;
+        _nameController.text = NameValidator.format(profile.fullName);
       }
     } catch (_) {
       /* guest or profile unavailable */
@@ -70,15 +73,10 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
   }
 
   String? _validateBilling() {
-    final name = _nameController.text.trim();
-    final zip = _zipController.text.trim();
-    if (name.length < 2) {
-      return 'Cardholder name is required';
-    }
-    if (!RegExp(r'^\d{5}(-\d{4})?$').hasMatch(zip)) {
-      return 'Enter a valid US ZIP code';
-    }
-    return null;
+    final nameError =
+        NameValidator.validateCardholderName(_nameController.text);
+    if (nameError != null) return nameError;
+    return validateZip(_zipController.text);
   }
 
   Future<void> _saveCard() async {
@@ -205,6 +203,8 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
                   border: OutlineInputBorder(),
                 ),
                 keyboardType: TextInputType.number,
+                inputFormatters: [zipInputFormatter()],
+                maxLength: 10,
                 enabled: !busy,
               ),
               const SizedBox(height: 8),

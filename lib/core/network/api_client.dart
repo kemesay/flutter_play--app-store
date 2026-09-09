@@ -94,9 +94,14 @@ class ApiClient {
     } on ApiException {
       rethrow;
     } on TimeoutException {
+      // Note: `.timeout()` only stops *waiting* on the response — it can't
+      // cancel the underlying request, which may still reach the server and
+      // succeed. `isTimeout` lets callers that create/modify data (e.g.
+      // booking submission) avoid implying the operation definitely failed.
       throw const ApiException(
         message:
             'The request took too long to respond. Please check your connection and try again.',
+        isTimeout: true,
       );
     } on SocketException {
       throw const ApiException(

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
 import 'package:oda_black_car_service/core/utils/distance_utils.dart';
+import 'package:oda_black_car_service/core/utils/name_validator.dart';
 import 'package:oda_black_car_service/core/utils/pricing_calculator.dart';
 import 'package:oda_black_car_service/data/mappers/booking_update_mapper.dart';
 import 'package:oda_black_car_service/data/models/additional_stop_model.dart';
@@ -380,9 +381,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       CustomSnackbar.show(context, 'Select airport from suggestions.');
       return false;
     }
-    if (!_isAllowedPickupState(_airportDetail!)) {
-      CustomSnackbar.show(
-          context, 'Airport pickup must be in California or Washington.');
+    if (!_isUnitedStates(_airportDetail!)) {
+      CustomSnackbar.show(context, 'Airport pickup must be in the USA.');
       return false;
     }
     if (!_isUnitedStates(_accommodationDetail!)) {
@@ -390,6 +390,11 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         context,
         'Accommodation must be in the United States.',
       );
+      return false;
+    }
+    final nameError = NameValidator.validate(_passengerNameController.text);
+    if (nameError != null) {
+      CustomSnackbar.show(context, nameError);
       return false;
     }
 
@@ -420,7 +425,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       pickupPreferenceId: _pickupPreferenceId,
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
       bookingFor: _bookingFor,
-      passengerFullName: _passengerNameController.text.trim(),
+      passengerFullName: NameValidator.format(_passengerNameController.text),
       passengerCellPhone: _passengerPhoneController.text.trim(),
       passengerEmail: _passengerEmailController.text.trim(),
       gratuityId: _selectedGratuityId!,
@@ -436,9 +441,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           context, 'Select pickup and drop-off from suggestions.');
       return false;
     }
-    if (!_isAllowedPickupState(_pickupDetail!)) {
-      CustomSnackbar.show(
-          context, 'Pickup must be in California or Washington.');
+    if (!_isUnitedStates(_pickupDetail!)) {
+      CustomSnackbar.show(context, 'Pickup must be in the USA.');
+      return false;
+    }
+    final nameError = NameValidator.validate(_passengerNameController.text);
+    if (nameError != null) {
+      CustomSnackbar.show(context, nameError);
       return false;
     }
 
@@ -462,7 +471,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           _returnDateTime != null ? _formatApiDateTime(_returnDateTime!) : null,
       specialInstructions: _instructionsController.text.trim(),
       bookingFor: _bookingFor,
-      passengerFullName: _passengerNameController.text.trim(),
+      passengerFullName: NameValidator.format(_passengerNameController.text),
       passengerEmail: _passengerEmailController.text.trim(),
       passengerCellPhone: _passengerPhoneController.text.trim(),
       additionalStopId: _hasAdditionalStop ? _additionalStopId : null,
@@ -482,9 +491,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           context, 'Select pickup and drop-off from suggestions.');
       return false;
     }
-    if (!_isAllowedPickupState(_pickupDetail!)) {
-      CustomSnackbar.show(
-          context, 'Pickup must be in California or Washington.');
+    if (!_isUnitedStates(_pickupDetail!)) {
+      CustomSnackbar.show(context, 'Pickup must be in the USA.');
+      return false;
+    }
+    final nameError = NameValidator.validate(_passengerNameController.text);
+    if (nameError != null) {
+      CustomSnackbar.show(context, nameError);
       return false;
     }
 
@@ -506,7 +519,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       pickupDateTime: _formatApiDateTime(_pickupDateTime),
       specialInstructions: _instructionsController.text.trim(),
       bookingFor: _bookingFor,
-      passengerFullName: _passengerNameController.text.trim(),
+      passengerFullName: NameValidator.format(_passengerNameController.text),
       passengerCellPhone: _passengerPhoneController.text.trim(),
       passengerEmail: _passengerEmailController.text.trim(),
       carId: _selectedCarId!,
@@ -759,10 +772,10 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             _refreshRoutePreview();
           },
           onPlaceSelected: (detail) {
-            if (!_isAllowedPickupState(detail)) {
+            if (!_isUnitedStates(detail)) {
               CustomSnackbar.show(
                 context,
-                'Airport/terminal pickup must be in California or Washington.',
+                'Airport/terminal pickup must be in the USA.',
               );
               return;
             }
@@ -828,7 +841,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       children: [
         _sectionTitle('Pickup & drop-off'),
         LocationPickerField(
-          label: 'Pickup location (California or Washington)',
+          label: 'Pickup location (USA)',
           controller: _pickupController,
           placeService: _placeService,
           sessionToken: _sessionToken,
@@ -838,9 +851,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             _refreshRoutePreview();
           },
           onPlaceSelected: (detail) {
-            if (!_isAllowedPickupState(detail)) {
-              CustomSnackbar.show(
-                  context, 'Pickup must be in California or Washington.');
+            if (!_isUnitedStates(detail)) {
+              CustomSnackbar.show(context, 'Pickup must be in the USA.');
               return;
             }
             setState(() => _pickupDetail = detail);
@@ -1711,15 +1723,4 @@ class _RouteEndpointRow extends StatelessWidget {
       ],
     );
   }
-}
-
-bool _isAllowedPickupState(PlaceDetail detail) {
-  if (!_isUnitedStates(detail)) return false;
-  final state = detail.administrativeAreaShortName?.toUpperCase();
-  if (state == 'CA' || state == 'WA') return true;
-  final address = detail.formattedAddress.toLowerCase();
-  return address.contains(', ca') ||
-      address.contains('california') ||
-      address.contains(', wa') ||
-      address.contains('washington');
 }

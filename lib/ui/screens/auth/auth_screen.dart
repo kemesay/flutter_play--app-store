@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../core/utils/name_validator.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../ui/theme/app_tokens.dart';
 import '../../../ui/widgets/app_primary_button.dart';
@@ -536,12 +537,7 @@ class _RegisterFormState extends State<_RegisterForm> {
                         textInputAction: TextInputAction.next,
                         enableInteractiveSelection: true,
                         autofillHints: const [AutofillHints.name],
-                        validator: (value) {
-                          if (value == null || value.trim().length < 2) {
-                            return 'Please enter your full name';
-                          }
-                          return null;
-                        },
+                        validator: NameValidator.validate,
                       ),
                       const SizedBox(height: AppSpacing.md),
                       TextFormField(
@@ -690,7 +686,7 @@ class _RegisterFormState extends State<_RegisterForm> {
     if (!_formKey.currentState!.validate()) return;
 
     final success = await authProvider.register(
-      fullName: _fullNameController.text.trim(),
+      fullName: NameValidator.format(_fullNameController.text),
       email: _emailController.text.trim(),
       phoneNumber: _phoneController.text.trim(),
       password: _passwordController.text.trim(),

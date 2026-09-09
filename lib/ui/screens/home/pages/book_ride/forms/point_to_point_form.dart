@@ -517,7 +517,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 placeService: _placeService,
                 sessionToken: _sessionToken,
                 onPlaceSelected: (detail) {
-                  if (!_isCaliforniaPickup(detail)) return;
+                  if (!_isValidPointToPointPickup(detail)) return;
                   setState(() {
                     _pickupDetail = detail;
                     _routeDistanceInMiles = null;
@@ -884,12 +884,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               _StyledTextField(
                 label: 'Passenger full name',
                 controller: _passengerNameController,
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Passenger name is required';
-                  }
-                  return null;
-                },
+                validator: NameValidator.validate,
                 enabled:
                     _bookingFor != 'Myself' || authProvider.currentUser == null,
               ),
@@ -967,7 +962,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 verifiedSquarePayload: _squarePayload,
                 squareTokenizedAtTotal: _squareTokenizedAtTotal,
                 bookingTotal: priceBreakdown?.total,
-                cardholderNameHint: _passengerNameController.text.trim(),
+                cardholderNameHint: NameValidator.format(_passengerNameController.text),
                 onSquareVerified: (payload, total) {
                   setState(() {
                     _squarePayload = payload;
@@ -1405,7 +1400,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
 
     if (!mounted) return;
     if (result != null) {
-      if (!_isCaliforniaPickup(result.pickup)) {
+      if (!_isValidPointToPointPickup(result.pickup)) {
         return;
       }
       setState(() {
@@ -1423,12 +1418,11 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     }
   }
 
-  bool _isCaliforniaPickup(PlaceDetail detail) {
-    if (_isAllowedPickupState(detail)) {
+  bool _isValidPointToPointPickup(PlaceDetail detail) {
+    if (_isUnitedStatesLocation(detail)) {
       return true;
     }
-    _showSnackbar(
-        'Pickup address must be located in California or Washington, USA.');
+    _showSnackbar('Pickup address must be located in the USA.');
     return false;
   }
 
@@ -1575,7 +1569,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       return;
     }
 
-    final passengerName = _passengerNameController.text.trim();
+    final passengerName = NameValidator.format(_passengerNameController.text);
     final passengerEmail = _passengerEmailController.text.trim();
     final passengerPhone = _passengerPhoneController.text.trim();
 

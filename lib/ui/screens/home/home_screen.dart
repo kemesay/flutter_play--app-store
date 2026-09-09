@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final authProvider = context.watch<AuthProvider>();
     final errorBanner = context.watch<CatalogProvider>().errorMessage ??
-        context.watch<BookingProvider>().errorMessage;
+        context.watch<BookingProvider>().historyErrorMessage;
     final user = authProvider.currentUser;
 
     return Scaffold(

@@ -35,6 +35,10 @@ class BookingProvider extends ChangeNotifier {
   bool _isLoadingHistory = false;
   String? _errorMessage;
   String? _successMessage;
+  // Kept separate from `_errorMessage`: a background history refresh (or its
+  // realtime-room wiring) failing right after a successful booking must
+  // never overwrite the success message the user is already seeing.
+  String? _historyErrorMessage;
   List<BookingHistoryItem> _bookings = const [];
 
   TravelType get selectedTravelType => _selectedTravelType;
@@ -42,6 +46,7 @@ class BookingProvider extends ChangeNotifier {
   bool get isLoadingHistory => _isLoadingHistory;
   String? get errorMessage => _errorMessage;
   String? get successMessage => _successMessage;
+  String? get historyErrorMessage => _historyErrorMessage;
   List<BookingHistoryItem> get bookings => _bookings;
 
   void setTravelType(TravelType travelType) {
@@ -56,10 +61,10 @@ class BookingProvider extends ChangeNotifier {
     _notify();
     try {
       _bookings = await _bookingService.fetchUserBookings();
-      _errorMessage = null;
+      _historyErrorMessage = null;
       await _wireActiveBookingsRealtime();
     } catch (error) {
-      _errorMessage = _formatError(error);
+      _historyErrorMessage = _formatError(error);
     } finally {
       _isLoadingHistory = false;
       _notify();
@@ -142,7 +147,7 @@ class BookingProvider extends ChangeNotifier {
       await refreshBookings();
       return true;
     } catch (error) {
-      _errorMessage = _formatError(error);
+      _errorMessage = _formatSubmissionError(error);
       _successMessage = null;
       return false;
     } finally {
@@ -182,13 +187,25 @@ class BookingProvider extends ChangeNotifier {
       await refreshBookings();
       return true;
     } catch (error) {
-      _errorMessage = _formatError(error);
+      _errorMessage = _formatSubmissionError(error);
       _successMessage = null;
       return false;
     } finally {
       _isSubmitting = false;
       _notify();
     }
+  }
+
+  /// Like [_formatError], but for a create/update call specifically: a
+  /// client-side timeout there doesn't mean the operation was rejected — the
+  /// server may have gone on to complete it — so tell the user to check
+  /// before resubmitting rather than implying it's safe to just try again.
+  static String _formatSubmissionError(Object error) {
+    if (error is ApiException && error.isTimeout) {
+      return "We didn't hear back in time, but your booking may have gone "
+          'through. Please check your trip history before submitting again.';
+    }
+    return _formatError(error);
   }
 
   void _joinBookingRoomFromResponse(Map<String, dynamic> bookingResponse) {

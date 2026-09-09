@@ -239,7 +239,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             placeService: _placeService,
             sessionToken: _sessionToken,
             onPlaceSelected: (detail) {
-              if (!_validateCaliforniaPickup(detail)) return;
+              if (!_validateHourlyPickup(detail)) return;
               setState(() {
                 _pickupDetail = detail;
                 _routeDistanceInMiles = null;
@@ -511,12 +511,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
           _StyledTextField(
             label: 'Passenger full name',
             controller: _passengerNameController,
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Passenger name is required';
-              }
-              return null;
-            },
+            validator: NameValidator.validate,
             enabled:
                 _bookingFor != 'Myself' || authProvider.currentUser == null,
           ),
@@ -592,7 +587,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             verifiedSquarePayload: _squarePayload,
             squareTokenizedAtTotal: _squareTokenizedAtTotal,
             bookingTotal: priceBreakdown?.total,
-            cardholderNameHint: _passengerNameController.text.trim(),
+            cardholderNameHint: NameValidator.format(_passengerNameController.text),
             onSquareVerified: (payload, total) {
               setState(() {
                 _squarePayload = payload;
@@ -1111,12 +1106,11 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     }
   }
 
-  bool _validateCaliforniaPickup(PlaceDetail detail) {
-    if (_isAllowedPickupState(detail)) {
+  bool _validateHourlyPickup(PlaceDetail detail) {
+    if (_isUnitedStatesLocation(detail)) {
       return true;
     }
-    _showSnackbar(
-        'Pickup location must be within California or Washington, USA.');
+    _showSnackbar('Pickup location must be within the USA.');
     return false;
   }
 
@@ -1220,7 +1214,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       return;
     }
 
-    final passengerName = _passengerNameController.text.trim();
+    final passengerName = NameValidator.format(_passengerNameController.text);
     final passengerEmail = _passengerEmailController.text.trim();
     final passengerPhone = _passengerPhoneController.text.trim();
 
