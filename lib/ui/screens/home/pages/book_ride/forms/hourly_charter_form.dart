@@ -78,6 +78,8 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
   final _dropoffController = TextEditingController();
   final _instructionController = TextEditingController();
   final _itineraryNotesController = TextEditingController();
+  final _promoCodeController = TextEditingController();
+  final _promoCodeService = PromoCodeService();
   late final TextEditingController _passengerNameController;
   late final TextEditingController _passengerEmailController;
   late final TextEditingController _passengerPhoneController;
@@ -101,6 +103,11 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
   bool _agreedToTerms = false;
   String _vehicleClassFilter = _allVehiclesLabel;
   String _selectedOccasion = 'Wedding';
+  String? _appliedPromoCode;
+  double _promoDiscount = 0;
+  _PromoStatus _promoStatus = _PromoStatus.idle;
+  String? _promoMessage;
+  TripPriceBreakdown? _lastPriceBreakdown;
 
   double? _routeDistanceInMiles;
   String? _routeDurationText;
@@ -135,6 +142,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     _dropoffController.dispose();
     _instructionController.dispose();
     _itineraryNotesController.dispose();
+    _promoCodeController.dispose();
     _passengerNameController.dispose();
     _passengerEmailController.dispose();
     _passengerPhoneController.dispose();
@@ -182,7 +190,11 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       gratuity: selectedGratuity,
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      promoDiscount: _billingMode == HourlyBillingMode.preBooked
+          ? _promoDiscount
+          : 0,
     );
+    _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle =
         'Duration: $_selectedHours hour${_selectedHours == 1 ? '' : 's'}';
     final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
@@ -302,7 +314,20 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
           const SizedBox(height: 16),
           _BillingModeSelector(
             value: _billingMode,
-            onChanged: (mode) => setState(() => _billingMode = mode),
+            onChanged: (mode) => setState(() {
+              _billingMode = mode;
+              // Promo codes only apply to pre-booked hourly charters (the
+              // backend rejects them for LIVE billing, whose charge is based
+              // on hours held, not the fare total) — clear any applied code
+              // when switching to LIVE so it's never silently submitted.
+              if (mode == HourlyBillingMode.live) {
+                _appliedPromoCode = null;
+                _promoDiscount = 0;
+                _promoCodeController.clear();
+                _promoStatus = _PromoStatus.idle;
+                _promoMessage = null;
+              }
+            }),
           ),
           const SizedBox(height: 16),
           plannerCard,
@@ -552,8 +577,23 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
                 _bookingFor != 'Myself' || authProvider.currentUser == null,
           ),
           const SizedBox(height: 24),
+          if (_billingMode == HourlyBillingMode.preBooked) ...[
+            const _ProfessionalSectionHeader(
+              title: '7. Promo Code',
+              subtitle: 'Have a code? Apply it before you book.',
+            ),
+            const SizedBox(height: 8),
+            _PromoCodeField(
+              controller: _promoCodeController,
+              status: _promoStatus,
+              message: _promoMessage,
+              onApply: _handleApplyPromoCode,
+              onRemove: _handleRemovePromoCode,
+            ),
+            const SizedBox(height: 24),
+          ],
           const _ProfessionalSectionHeader(
-            title: '7. Gratuity',
+            title: '8. Gratuity',
             subtitle: 'Show appreciation for excellent service',
           ),
           const SizedBox(height: 8),
@@ -575,7 +615,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
             ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '8. Payment Method',
+            title: '9. Payment Method',
             subtitle: 'Secure payment options',
           ),
           const SizedBox(height: 8),
@@ -660,7 +700,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
           ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '9. Confirmation',
+            title: '10. Confirmation',
             subtitle: 'Review and confirm your booking',
           ),
           if (consentHint != null) ...[
@@ -1122,6 +1162,51 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     return null;
   }
 
+  Future<void> _handleApplyPromoCode() async {
+    final code = _promoCodeController.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    final currentTotal = _lastPriceBreakdown?.total ?? 0;
+    final baseFare = currentTotal + _promoDiscount;
+
+    setState(() {
+      _promoStatus = _PromoStatus.loading;
+      _promoMessage = null;
+    });
+    try {
+      final result = await _promoCodeService.validate(
+        code: code,
+        bookingType: 'Hourly Charter',
+        fareAmount: baseFare > 0 ? baseFare : 0.01,
+      );
+      setState(() {
+        _appliedPromoCode = code;
+        _promoDiscount = result.discount;
+        _promoStatus = _PromoStatus.applied;
+        _promoMessage =
+            'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
+      });
+    } catch (error) {
+      setState(() {
+        _promoDiscount = 0;
+        _promoStatus = _PromoStatus.error;
+        _promoMessage = error is ApiException
+            ? error.message
+            : "That promo code isn't valid for this trip.";
+      });
+    }
+  }
+
+  void _handleRemovePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _promoDiscount = 0;
+      _promoCodeController.clear();
+      _promoStatus = _PromoStatus.idle;
+      _promoMessage = null;
+    });
+  }
+
   Future<void> _submit(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     if (_pickupDetail == null || _dropoffDetail == null) {
@@ -1168,6 +1253,9 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       gratuity: _findGratuity(catalog, _selectedGratuityId),
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      promoDiscount: _billingMode == HourlyBillingMode.preBooked
+          ? _promoDiscount
+          : 0,
     )?.total;
 
     if (squareEnabled) {
@@ -1244,6 +1332,9 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       pickupDateTime: dateFormatter.format(_pickupDateTime!),
       selectedHours: _selectedHours,
       billingMode: _billingMode,
+      promoCode: _billingMode == HourlyBillingMode.preBooked
+          ? _appliedPromoCode
+          : null,
       occasion: _selectedOccasion,
       specialInstructions:
           instructions.isEmpty ? null : instructions.join('\n\n'),

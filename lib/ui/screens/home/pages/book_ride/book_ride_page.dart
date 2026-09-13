@@ -17,6 +17,7 @@ import 'package:oda_black_car_service/data/models/additional_stop_model.dart';
 import 'package:oda_black_car_service/data/models/airport_booking_request.dart';
 import 'package:oda_black_car_service/data/models/airport_pickup_preference_model.dart';
 import 'package:oda_black_car_service/data/models/card_details.dart';
+import 'package:oda_black_car_service/core/exceptions/api_exception.dart';
 import 'package:oda_black_car_service/core/utils/card_validation_utils.dart';
 import 'package:oda_black_car_service/core/utils/name_validator.dart';
 import 'package:oda_black_car_service/data/models/car_model.dart';
@@ -31,6 +32,7 @@ import 'package:oda_black_car_service/data/models/square_payment_payload.dart';
 import 'package:oda_black_car_service/data/models/travel_type.dart';
 import 'package:oda_black_car_service/data/services/directions_service.dart';
 import 'package:oda_black_car_service/data/services/place_service.dart';
+import 'package:oda_black_car_service/data/services/promo_code_service.dart';
 import 'package:oda_black_car_service/model/place_model.dart';
 import 'package:oda_black_car_service/providers/auth_provider.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
@@ -3846,6 +3848,128 @@ String _formatCurrency(double amount, String currency) {
   }
 }
 
+/// Shared promo-code apply/remove state across all three booking forms.
+enum _PromoStatus { idle, loading, applied, error }
+
+/// Shared promo-code entry widget used by all three booking forms — a text
+/// field plus an Apply/Remove button, with inline success/error feedback.
+class _PromoCodeField extends StatelessWidget {
+  const _PromoCodeField({
+    required this.controller,
+    required this.status,
+    required this.message,
+    required this.onApply,
+    required this.onRemove,
+  });
+
+  final TextEditingController controller;
+  final _PromoStatus status;
+  final String? message;
+  final VoidCallback onApply;
+  final VoidCallback onRemove;
+
+  static const _brandGreen = Color(0xFF03930A);
+
+  @override
+  Widget build(BuildContext context) {
+    final applied = status == _PromoStatus.applied;
+    final loading = status == _PromoStatus.loading;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: controller,
+                enabled: !applied,
+                textCapitalization: TextCapitalization.characters,
+                decoration: InputDecoration(
+                  labelText: 'Enter promo code',
+                  hintText: 'e.g. WELCOME10',
+                  prefixIcon: const Icon(Icons.local_offer_outlined),
+                  filled: true,
+                  fillColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+                onChanged: (value) {
+                  final upper = value.toUpperCase();
+                  if (upper != value) {
+                    controller.value = controller.value.copyWith(
+                      text: upper,
+                      selection: TextSelection.collapsed(offset: upper.length),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              height: 56,
+              child: applied
+                  ? OutlinedButton.icon(
+                      onPressed: onRemove,
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Remove'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: loading ? null : onApply,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _brandGreen,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Apply'),
+                    ),
+            ),
+          ],
+        ),
+        if (message != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                applied ? Icons.check_circle : Icons.error_outline,
+                size: 18,
+                color: applied ? _brandGreen : Colors.red,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  message!,
+                  style: TextStyle(
+                    color: applied ? _brandGreen : Colors.red,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class _TripPriceSummaryCard extends StatelessWidget {
   const _TripPriceSummaryCard({
     required this.breakdown,
@@ -3938,6 +4062,15 @@ class _TripPriceSummaryCard extends StatelessWidget {
                     breakdown.gratuityAmount, breakdown.currency),
               ),
             ],
+            if (breakdown.promoDiscount > 0) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _PricingRow(
+                label: 'Promo discount',
+                amount:
+                    '-${_formatCurrency(breakdown.promoDiscount, breakdown.currency)}',
+                valueColor: const Color(0xFF03930A),
+              ),
+            ],
             const SizedBox(height: 12),
             _PricingRow(
               label: 'Estimated total',
@@ -3970,11 +4103,13 @@ class _PricingRow extends StatelessWidget {
     required this.label,
     required this.amount,
     this.emphasize = false,
+    this.valueColor,
   });
 
   final String label;
   final String amount;
   final bool emphasize;
+  final Color? valueColor;
 
   @override
   Widget build(BuildContext context) {
@@ -3992,7 +4127,9 @@ class _PricingRow extends StatelessWidget {
         ),
         Text(
           amount,
-          style: textStyle,
+          style: valueColor != null
+              ? textStyle?.copyWith(color: valueColor, fontWeight: FontWeight.w600)
+              : textStyle,
         ),
       ],
     );

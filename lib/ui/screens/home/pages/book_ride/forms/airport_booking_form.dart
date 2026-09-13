@@ -24,7 +24,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   final _arrivalFlightNumberController = TextEditingController();
   final _returnAirlineController = TextEditingController();
   final _returnFlightNumberController = TextEditingController();
-  final _additionalStopDescriptionController = TextEditingController();
+  final _promoCodeController = TextEditingController();
   late final TextEditingController _passengerNameController;
   late final TextEditingController _passengerEmailController;
   late final TextEditingController _passengerPhoneController;
@@ -46,14 +46,18 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
   TimeOfDay? _pickupTime;
   DateTime? _returnDate;
   TimeOfDay? _returnTime;
-  bool _hasAdditionalStop = false;
   int? _selectedCarId;
   int? _selectedGratuityId;
-  int? _selectedAdditionalStopId;
   final List<SelectedExtraOption> _selectedExtras = [];
   String _bookingFor = 'Myself';
   bool _agreedToTerms = false;
   String _vehicleClassFilter = _allVehiclesLabel;
+  String? _appliedPromoCode;
+  double _promoDiscount = 0;
+  _PromoStatus _promoStatus = _PromoStatus.idle;
+  String? _promoMessage;
+  TripPriceBreakdown? _lastPriceBreakdown;
+  final _promoCodeService = PromoCodeService();
 
   PaymentMethodType _paymentMethod = PaymentMethodType.newCard;
   int? _selectedPaymentDetailId;
@@ -89,7 +93,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     _arrivalFlightNumberController.dispose();
     _returnAirlineController.dispose();
     _returnFlightNumberController.dispose();
-    _additionalStopDescriptionController.dispose();
+    _promoCodeController.dispose();
     _passengerNameController.dispose();
     _passengerEmailController.dispose();
     _passengerPhoneController.dispose();
@@ -157,19 +161,49 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     return options;
   }
 
-  List<AdditionalStopModel> _availableAdditionalStops(
-      List<AdditionalStopModel> stops) {
-    if (stops.isEmpty) return const [];
-    final keyword = _isRoundTrip ? 'greater' : 'small';
-    final filtered = stops
-        .where(
-          (stop) => stop.stopType.toLowerCase().contains(keyword),
-        )
-        .toList();
-    if (filtered.isNotEmpty) {
-      return filtered;
+  Future<void> _handleApplyPromoCode() async {
+    final code = _promoCodeController.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    final currentTotal = _lastPriceBreakdown?.total ?? 0;
+    final baseFare = currentTotal + _promoDiscount;
+
+    setState(() {
+      _promoStatus = _PromoStatus.loading;
+      _promoMessage = null;
+    });
+    try {
+      final result = await _promoCodeService.validate(
+        code: code,
+        bookingType: 'Airport Service',
+        fareAmount: baseFare > 0 ? baseFare : 0.01,
+      );
+      setState(() {
+        _appliedPromoCode = code;
+        _promoDiscount = result.discount;
+        _promoStatus = _PromoStatus.applied;
+        _promoMessage =
+            'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
+      });
+    } catch (error) {
+      setState(() {
+        _promoDiscount = 0;
+        _promoStatus = _PromoStatus.error;
+        _promoMessage = error is ApiException
+            ? error.message
+            : "That promo code isn't valid for this trip.";
+      });
     }
-    return stops;
+  }
+
+  void _handleRemovePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _promoDiscount = 0;
+      _promoCodeController.clear();
+      _promoStatus = _PromoStatus.idle;
+      _promoMessage = null;
+    });
   }
 
   Widget _sectionHeader(BuildContext context, String title) {
@@ -313,20 +347,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     });
   }
 
-  void _handleAdditionalStopToggle(
-    bool isEnabled,
-    List<AdditionalStopModel> availableStops,
-  ) {
-    setState(() {
-      _hasAdditionalStop = isEnabled;
-      if (_hasAdditionalStop && availableStops.isNotEmpty) {
-        _selectedAdditionalStopId = availableStops.first.additionalStopId;
-      } else {
-        _selectedAdditionalStopId = null;
-      }
-    });
-  }
-
   Future<void> _fetchRouteDistance() async {
     if (_airportLocationDetail == null || _accommodationDetail == null) return;
     try {
@@ -410,8 +430,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     final selectedCar =
         _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final selectedGratuity = _findGratuity(catalog, _selectedGratuityId);
-    final selectedAdditionalStop =
-        _findAdditionalStop(catalog, _selectedAdditionalStopId);
     // Use selected preference or default to first for pricing calculation only
     final effectivePreference = _selectedPreference ??
         (catalog.pickupPreferences.isNotEmpty
@@ -424,9 +442,10 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       isRoundTrip: _tripType.toLowerCase().contains('round trip'),
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
-      additionalStop: selectedAdditionalStop,
       pickupPreference: effectivePreference,
+      promoDiscount: _promoDiscount,
     );
+    _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle =
         _buildAirportPricingSubtitle(effectiveDistance, effectivePreference);
     final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
@@ -449,8 +468,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
 
     final vehicleClassOptions = _buildVehicleClassOptions(catalog.cars);
     final filteredCars = _filterCars(catalog.cars);
-    final availableAdditionalStops =
-        _availableAdditionalStops(catalog.additionalStops);
 
     if (_selectedCarId != null &&
         filteredCars.every((car) => car.carId != _selectedCarId)) {
@@ -458,21 +475,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         if (mounted) {
           setState(() {
             _selectedCarId = null;
-          });
-        }
-      });
-    }
-
-    if (_hasAdditionalStop &&
-        availableAdditionalStops.isNotEmpty &&
-        (_selectedAdditionalStopId == null ||
-            availableAdditionalStops.every((stop) =>
-                stop.additionalStopId != _selectedAdditionalStopId))) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _selectedAdditionalStopId =
-                availableAdditionalStops.first.additionalStopId;
           });
         }
       });
@@ -650,13 +652,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
               if (value != null) {
                 setState(() {
                   _tripType = value;
-                  if (_hasAdditionalStop) {
-                    final resolvedStops =
-                        _availableAdditionalStops(catalog.additionalStops);
-                    _selectedAdditionalStopId = resolvedStops.isNotEmpty
-                        ? resolvedStops.first.additionalStopId
-                        : null;
-                  }
                 });
               }
             },
@@ -927,50 +922,17 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
             ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '8. Additional stop on the way',
-            subtitle: 'Need an extra stop along the way?',
+            title: '8. Promo Code',
+            subtitle: 'Have a code? Apply it before you book.',
           ),
           const SizedBox(height: 8),
-          CheckboxListTile(
-            title: const Text('Additional stop on the way'),
-            value: _hasAdditionalStop,
-            contentPadding: EdgeInsets.zero,
-            onChanged: (value) => _handleAdditionalStopToggle(
-                value ?? false, availableAdditionalStops),
+          _PromoCodeField(
+            controller: _promoCodeController,
+            status: _promoStatus,
+            message: _promoMessage,
+            onApply: _handleApplyPromoCode,
+            onRemove: _handleRemovePromoCode,
           ),
-          if (_hasAdditionalStop && availableAdditionalStops.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'No additional stop options are available at this time.',
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ),
-          if (_hasAdditionalStop && availableAdditionalStops.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            ...availableAdditionalStops.map(
-              (stop) => RadioListTile<int>(
-                title: Text(
-                    '${stop.stopType} (\$${stop.additionalStopPrice.toStringAsFixed(2)})'),
-                value: stop.additionalStopId,
-                groupValue: _selectedAdditionalStopId,
-                contentPadding: EdgeInsets.zero,
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedAdditionalStopId = value;
-                    });
-                  }
-                },
-              ),
-            ),
-            const SizedBox(height: 8),
-            _StyledTextField(
-              label: "Let us know where you'd like to stop",
-              controller: _additionalStopDescriptionController,
-              maxLines: 3,
-            ),
-          ],
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
             title: '9. Passenger info',
@@ -1624,8 +1586,8 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       isRoundTrip: _tripType.toLowerCase().contains('round trip'),
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
-      additionalStop: _findAdditionalStop(catalog, _selectedAdditionalStopId),
       pickupPreference: effectivePreference,
+      promoDiscount: _promoDiscount,
     )?.total;
 
     if (squareEnabled) {
@@ -1715,11 +1677,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           : _returnFlightNumberController.text,
       distanceInMiles: distance,
       carId: _selectedCarId!,
-      additionalStopId: _hasAdditionalStop ? _selectedAdditionalStopId : null,
-      additionalStopOnTheWayDescription: _hasAdditionalStop &&
-              _additionalStopDescriptionController.text.isNotEmpty
-          ? _additionalStopDescriptionController.text
-          : null,
+      promoCode: _appliedPromoCode,
       pickupPreferenceId: _selectedPreference?.pickupPreferenceId,
       extraOptions: _selectedExtras,
       bookingFor: _bookingFor,
@@ -1781,16 +1739,6 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     return null;
   }
 
-  AdditionalStopModel? _findAdditionalStop(
-    CatalogProvider catalog,
-    int? additionalStopId,
-  ) {
-    if (additionalStopId == null) return null;
-    for (final stop in catalog.additionalStops) {
-      if (stop.additionalStopId == additionalStopId) return stop;
-    }
-    return null;
-  }
 
   String? _buildAirportPricingSubtitle(
     double? distance,

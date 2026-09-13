@@ -73,12 +73,13 @@ class _PointToPointFormState extends State<_PointToPointForm> {
   final _formKey = GlobalKey<FormState>();
   final _placeService = PlaceService();
   final _directionsService = DirectionsService();
+  final _promoCodeService = PromoCodeService();
   final _sessionToken = const Uuid().v4();
 
   final _pickupController = TextEditingController();
   final _dropoffController = TextEditingController();
   final _instructionsController = TextEditingController();
-  final _additionalStopDescriptionController = TextEditingController();
+  final _promoCodeController = TextEditingController();
   late final TextEditingController _passengerNameController;
   late final TextEditingController _passengerEmailController;
   late final TextEditingController _passengerPhoneController;
@@ -100,10 +101,13 @@ class _PointToPointFormState extends State<_PointToPointForm> {
   int _suitcases = 0;
   int? _selectedCarId;
   int? _selectedGratuityId;
-  int? _selectedAdditionalStopId;
   String _bookingFor = 'Myself';
-  bool _hasAdditionalStop = false;
   bool _agreedToTerms = false;
+  String? _appliedPromoCode;
+  double _promoDiscount = 0;
+  _PromoStatus _promoStatus = _PromoStatus.idle;
+  String? _promoMessage;
+  TripPriceBreakdown? _lastPriceBreakdown;
   String _vehicleClassFilter = _allVehiclesLabel;
 
   PaymentMethodType _paymentMethod = PaymentMethodType.newCard;
@@ -145,7 +149,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     _pickupController.dispose();
     _dropoffController.dispose();
     _instructionsController.dispose();
-    _additionalStopDescriptionController.dispose();
+    _promoCodeController.dispose();
     _passengerNameController.dispose();
     _passengerEmailController.dispose();
     _passengerPhoneController.dispose();
@@ -431,8 +435,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     final selectedCar =
         _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final selectedGratuity = _findGratuity(catalog, _selectedGratuityId);
-    final selectedAdditionalStop =
-        _findAdditionalStop(catalog, _selectedAdditionalStopId);
     final priceBreakdown = PricingCalculator.pointToPoint(
       car: selectedCar,
       distanceInMiles: distanceInMiles,
@@ -440,8 +442,9 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       isRoundTrip: _isRoundTrip,
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
-      additionalStop: selectedAdditionalStop,
+      promoDiscount: _promoDiscount,
     );
+    _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle = _buildPointToPointPricingSubtitle(distanceInMiles);
     final squareEnabled = context.watch<SquareRuntimeConfig>().squareEnabled;
     final consentReady = isBookingPaymentReadyForConsent(
@@ -463,8 +466,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
 
     final vehicleClassOptions = _buildVehicleClassOptions(catalog.cars);
     final filteredCars = _filterCars(catalog.cars);
-    final availableAdditionalStops =
-        _availableAdditionalStops(catalog.additionalStops);
 
     if (_selectedCarId != null &&
         filteredCars.every((car) => car.carId != _selectedCarId)) {
@@ -475,25 +476,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
           });
         }
       });
-    }
-
-    if (_hasAdditionalStop &&
-        availableAdditionalStops.isNotEmpty &&
-        (_selectedAdditionalStopId == null ||
-            availableAdditionalStops.every((stop) =>
-                stop.additionalStopId != _selectedAdditionalStopId))) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() {
-            _selectedAdditionalStopId =
-                availableAdditionalStops.first.additionalStopId;
-          });
-        }
-      });
-    }
-
-    if (!_hasAdditionalStop && _selectedAdditionalStopId != null) {
-      _hasAdditionalStop = true;
     }
 
     return Column(
@@ -816,59 +798,17 @@ class _PointToPointFormState extends State<_PointToPointForm> {
               ),
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
-                title: '7. Additional Stop',
-                subtitle: 'Need an extra stop along the way?',
+                title: '7. Promo Code',
+                subtitle: 'Have a code? Apply it before you book.',
               ),
               const SizedBox(height: 8),
-              _StyledCheckbox(
-                title: 'Additional stop on the way',
-                value: _hasAdditionalStop,
-                onChanged: (value) => _handleAdditionalStopToggle(
-                  value ?? false,
-                  availableAdditionalStops,
-                ),
+              _PromoCodeField(
+                controller: _promoCodeController,
+                status: _promoStatus,
+                message: _promoMessage,
+                onApply: () => _handleApplyPromoCode(bookingType: 'Point to point'),
+                onRemove: _handleRemovePromoCode,
               ),
-              if (_hasAdditionalStop && availableAdditionalStops.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'No additional stop options are available.',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              if (_hasAdditionalStop &&
-                  availableAdditionalStops.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                ...availableAdditionalStops.map(
-                  (stop) => RadioListTile<int>(
-                    title: Text(
-                        '${stop.stopType} (\$${stop.additionalStopPrice.toStringAsFixed(2)})'),
-                    value: stop.additionalStopId,
-                    groupValue: _selectedAdditionalStopId,
-                    contentPadding: EdgeInsets.zero,
-                    onChanged: (value) {
-                      if (value != null) {
-                        setState(() {
-                          _selectedAdditionalStopId = value;
-                        });
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-                _StyledTextField(
-                  label: 'Describe the stop',
-                  controller: _additionalStopDescriptionController,
-                  maxLines: 2,
-                  validator: (value) {
-                    if (_hasAdditionalStop &&
-                        (value == null || value.trim().isEmpty)) {
-                      return 'Please describe the additional stop';
-                    }
-                    return null;
-                  },
-                ),
-              ],
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
                 title: '8. Passenger Information',
@@ -1170,14 +1110,52 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     return options;
   }
 
-  List<AdditionalStopModel> _availableAdditionalStops(
-      List<AdditionalStopModel> stops) {
-    if (stops.isEmpty) return const [];
-    final keyword = _isRoundTrip ? 'greater' : 'small';
-    final filtered = stops
-        .where((stop) => stop.stopType.toLowerCase().contains(keyword))
-        .toList();
-    return filtered.isNotEmpty ? filtered : stops;
+  Future<void> _handleApplyPromoCode({required String bookingType}) async {
+    final code = _promoCodeController.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+
+    // Reconstruct the pre-discount fare so re-checking a new code never
+    // validates against an amount that already has a previous discount
+    // baked into it.
+    final currentTotal = _lastPriceBreakdown?.total ?? 0;
+    final baseFare = currentTotal + _promoDiscount;
+
+    setState(() {
+      _promoStatus = _PromoStatus.loading;
+      _promoMessage = null;
+    });
+    try {
+      final result = await _promoCodeService.validate(
+        code: code,
+        bookingType: bookingType,
+        fareAmount: baseFare > 0 ? baseFare : 0.01,
+      );
+      setState(() {
+        _appliedPromoCode = code;
+        _promoDiscount = result.discount;
+        _promoStatus = _PromoStatus.applied;
+        _promoMessage =
+            'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
+      });
+    } catch (error) {
+      setState(() {
+        _promoDiscount = 0;
+        _promoStatus = _PromoStatus.error;
+        _promoMessage = error is ApiException
+            ? error.message
+            : "That promo code isn't valid for this trip.";
+      });
+    }
+  }
+
+  void _handleRemovePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _promoDiscount = 0;
+      _promoCodeController.clear();
+      _promoStatus = _PromoStatus.idle;
+      _promoMessage = null;
+    });
   }
 
   Widget _sectionHeader(BuildContext context, String title) {
@@ -1205,20 +1183,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     });
   }
 
-  void _handleAdditionalStopToggle(
-    bool isEnabled,
-    List<AdditionalStopModel> availableStops,
-  ) {
-    setState(() {
-      _hasAdditionalStop = isEnabled;
-      if (_hasAdditionalStop && availableStops.isNotEmpty) {
-        _selectedAdditionalStopId = availableStops.first.additionalStopId;
-      } else {
-        _selectedAdditionalStopId = null;
-        _additionalStopDescriptionController.clear();
-      }
-    });
-  }
 
   Widget _buildRouteOverviewCard(double? straightDistance) {
     final theme = Theme.of(context);
@@ -1521,10 +1485,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       isRoundTrip: _isRoundTrip,
       extraCatalog: context.read<CatalogProvider>().extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
-      additionalStop: _findAdditionalStop(
-        context.read<CatalogProvider>(),
-        _selectedAdditionalStopId,
-      ),
+      promoDiscount: _promoDiscount,
     )?.total;
 
     if (squareEnabled) {
@@ -1579,11 +1540,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       _showSnackbar('Passenger information is required.');
       return;
     }
-    if (_hasAdditionalStop && _selectedAdditionalStopId == null) {
-      _showSnackbar('Select an additional stop option.');
-      return;
-    }
-
     final dateFormatter = DateFormat('yyyy-MM-dd HH:mm:ss');
     final request = PointToPointBookingRequest(
       tripType: _tripType,
@@ -1604,11 +1560,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
           ? null
           : _instructionsController.text.trim(),
       bookingFor: _bookingFor,
-      additionalStopId: _hasAdditionalStop ? _selectedAdditionalStopId : null,
-      additionalStopOnTheWayDescription: _hasAdditionalStop &&
-              _additionalStopDescriptionController.text.trim().isNotEmpty
-          ? _additionalStopDescriptionController.text.trim()
-          : null,
+      promoCode: _appliedPromoCode,
       passengerFullName: passengerName,
       passengerEmail: passengerEmail,
       gratuityId: _selectedGratuityId!,
@@ -1667,17 +1619,6 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     if (gratuityId == null) return null;
     for (final gratuity in catalog.gratuities) {
       if (gratuity.gratuityId == gratuityId) return gratuity;
-    }
-    return null;
-  }
-
-  AdditionalStopModel? _findAdditionalStop(
-    CatalogProvider catalog,
-    int? additionalStopId,
-  ) {
-    if (additionalStopId == null) return null;
-    for (final stop in catalog.additionalStops) {
-      if (stop.additionalStopId == additionalStopId) return stop;
     }
     return null;
   }

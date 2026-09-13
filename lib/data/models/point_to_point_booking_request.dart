@@ -19,8 +19,7 @@ class PointToPointBookingRequest {
     this.returnPickupDateTime,
     this.specialInstructions,
     required this.bookingFor,
-    this.additionalStopId,
-    this.additionalStopOnTheWayDescription,
+    this.promoCode,
     required this.passengerFullName,
     required this.passengerEmail,
     required this.gratuityId,
@@ -50,8 +49,7 @@ class PointToPointBookingRequest {
   final String? returnPickupDateTime;
   final String? specialInstructions;
   final String bookingFor;
-  final int? additionalStopId;
-  final String? additionalStopOnTheWayDescription;
+  final String? promoCode;
   final String passengerFullName;
   final String passengerEmail;
   final int gratuityId;
@@ -95,13 +93,8 @@ class PointToPointBookingRequest {
     if (specialInstructions != null && specialInstructions!.isNotEmpty) {
       data['specialInstructions'] = specialInstructions;
     }
-    if (additionalStopId != null && additionalStopId! > 0) {
-      data['additionalStopId'] = additionalStopId;
-      if (additionalStopOnTheWayDescription != null &&
-          additionalStopOnTheWayDescription!.isNotEmpty) {
-        data['additionalStopOnTheWayDescription'] =
-            additionalStopOnTheWayDescription;
-      }
+    if (promoCode != null && promoCode!.trim().isNotEmpty) {
+      data['promoCode'] = promoCode!.trim().toUpperCase();
     }
     if (extraOptions.isNotEmpty) {
       data['extraOptions'] = extraOptions.map((e) => e.toJson()).toList();

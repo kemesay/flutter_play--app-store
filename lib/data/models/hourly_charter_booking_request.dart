@@ -28,6 +28,7 @@ class HourlyCharterBookingRequest {
     required this.selectedHours,
     required this.occasion,
     this.billingMode = HourlyBillingMode.preBooked,
+    this.promoCode,
     this.specialInstructions,
     required this.isGuestBooking,
     required this.bookingFor,
@@ -56,6 +57,7 @@ class HourlyCharterBookingRequest {
   final int selectedHours;
   final String occasion;
   final HourlyBillingMode billingMode;
+  final String? promoCode;
   final String? specialInstructions;
   final bool isGuestBooking;
   final String bookingFor;
@@ -99,6 +101,9 @@ class HourlyCharterBookingRequest {
 
     if (specialInstructions != null && specialInstructions!.isNotEmpty) {
       data['specialInstructions'] = specialInstructions;
+    }
+    if (promoCode != null && promoCode!.trim().isNotEmpty) {
+      data['promoCode'] = promoCode!.trim().toUpperCase();
     }
     if (extraOptions.isNotEmpty) {
       data['extraOptions'] = extraOptions.map((e) => e.toJson()).toList();

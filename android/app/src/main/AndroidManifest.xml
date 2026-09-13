@@ -13,7 +13,7 @@
                       android:xlargeScreens="true"
                       android:anyDensity="true"/>
     
-    <application android:label="ODA Black Car Service" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:usesCleartextTraffic="true" android:resizeableActivity="true" android:supportsRtl="true">
+    <application android:label="ODA Black Car Service" android:name="${applicationName}" android:icon="@mipmap/ic_launcher" android:resizeableActivity="true" android:supportsRtl="true">
 
         <meta-data android:name="com.google.android.geo.API_KEY" android:value="AIzaSyCvm85RFSLVS4DV7zBb1l0UlOJ1tpSXRPQ"/>
 

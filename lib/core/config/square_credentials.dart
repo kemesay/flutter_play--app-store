@@ -51,10 +51,10 @@ class SquareCredentials {
 
   // ---------------------------------------------------------------------------
   // Active environment
-  //   Release / --dart-define=PRODUCTION_API=true → production
-  //   Or: --dart-define=SQUARE_ENV=production
+  //   ACTIVE — live production. Flip back to `SquareEnvironment.sandbox` to
+  //   test again (or pass --dart-define=SQUARE_ENV=sandbox at build time).
   // ---------------------------------------------------------------------------
-  static const SquareEnvironment defaultEnvironment = SquareEnvironment.sandbox;
+  static const SquareEnvironment defaultEnvironment = SquareEnvironment.production;
 
   static bool get _preferProductionBuild {
     const force = bool.fromEnvironment('PRODUCTION_API', defaultValue: false);

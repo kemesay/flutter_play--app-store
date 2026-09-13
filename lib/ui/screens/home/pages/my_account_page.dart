@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/booking_provider.dart';
 import '../../../../providers/payment_provider.dart';
 import '../../../../data/models/booking_history_item.dart';
+import '../../../../data/services/promo_code_service.dart';
+import '../../../../core/exceptions/api_exception.dart';
 import '../../../theme/app_tokens.dart';
 import '../../../widgets/field_widget.dart';
 import '../../auth/change_password_screen.dart';
@@ -122,6 +126,10 @@ class _MyAccountPageState extends State<MyAccountPage> {
           hourlyRides: hourlyRides,
           airportRides: airportRides,
         ),
+        const SizedBox(height: AppSpacing.lg),
+
+        // Referral Code Section
+        const _ReferralCodeCard(),
         const SizedBox(height: AppSpacing.lg),
 
         // My Bookings Section
@@ -728,6 +736,177 @@ class _RideStatCard extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReferralCodeCard extends StatefulWidget {
+  const _ReferralCodeCard();
+
+  @override
+  State<_ReferralCodeCard> createState() => _ReferralCodeCardState();
+}
+
+class _ReferralCodeCardState extends State<_ReferralCodeCard> {
+  final _promoCodeService = PromoCodeService();
+
+  bool _loading = true;
+  ReferralCodeInfo? _referral;
+  bool _copied = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadReferralCode();
+  }
+
+  Future<void> _loadReferralCode() async {
+    try {
+      final referral = await _promoCodeService.getMyReferralCode();
+      if (!mounted) return;
+      setState(() {
+        _referral = referral;
+        _loading = false;
+      });
+    } on ApiException {
+      // Non-critical section — fail silently rather than blocking the rest
+      // of the account page (mirrors the website's My Account behavior).
+      if (!mounted) return;
+      setState(() => _loading = false);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _copyLink() async {
+    final referral = _referral;
+    if (referral == null) return;
+    await Clipboard.setData(ClipboardData(text: referral.link));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copied = false);
+    });
+  }
+
+  Future<void> _shareLink() async {
+    final referral = _referral;
+    if (referral == null) return;
+    await SharePlus.instance.share(
+      ShareParams(
+        text: referral.shareMessage,
+        subject: 'ODA Transportation — Refer a Friend',
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+            child: SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final referral = _referral;
+    if (referral == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.card_giftcard_rounded, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Refer a Friend',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Share your link — your friend gets '
+              '${referral.discountValue.toStringAsFixed(0)}% off their first '
+              'ride, and you get a reward once they complete it.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.md,
+                vertical: 10,
+              ),
+              decoration: BoxDecoration(
+                color: colorScheme.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: Text(
+                referral.code,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: colorScheme.primary,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    referral.link,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                IconButton(
+                  onPressed: _copyLink,
+                  tooltip: 'Copy link',
+                  icon: Icon(
+                    _copied ? Icons.check_rounded : Icons.copy_rounded,
+                    color: _copied ? colorScheme.primary : null,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: _shareLink,
+                icon: const Icon(Icons.share_rounded, size: 18),
+                label: const Text('Share'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

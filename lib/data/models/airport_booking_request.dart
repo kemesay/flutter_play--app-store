@@ -22,8 +22,7 @@ class AirportBookingRequest {
     this.returnFlightNumber,
     required this.distanceInMiles,
     required this.carId,
-    this.additionalStopId,
-    this.additionalStopOnTheWayDescription,
+    this.promoCode,
     this.pickupPreferenceId,
     this.extraOptions = const <SelectedExtraOption>[],
     required this.bookingFor,
@@ -58,8 +57,7 @@ class AirportBookingRequest {
   final String? returnFlightNumber;
   final double distanceInMiles;
   final int carId;
-  final int? additionalStopId;
-  final String? additionalStopOnTheWayDescription;
+  final String? promoCode;
   final int? pickupPreferenceId;
   final List<SelectedExtraOption> extraOptions;
   final String bookingFor;
@@ -114,13 +112,8 @@ class AirportBookingRequest {
     if (returnFlightNumber != null && returnFlightNumber!.isNotEmpty) {
       data['returnFlightNumber'] = returnFlightNumber;
     }
-    if (additionalStopId != null && additionalStopId! > 0) {
-      data['additionalStopId'] = additionalStopId;
-      if (additionalStopOnTheWayDescription != null &&
-          additionalStopOnTheWayDescription!.isNotEmpty) {
-        data['additionalStopOnTheWayDescription'] =
-            additionalStopOnTheWayDescription;
-      }
+    if (promoCode != null && promoCode!.trim().isNotEmpty) {
+      data['promoCode'] = promoCode!.trim().toUpperCase();
     }
     if (pickupPreferenceId != null) {
       data['pickupPreferenceId'] = pickupPreferenceId;

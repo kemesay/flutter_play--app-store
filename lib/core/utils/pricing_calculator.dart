@@ -19,6 +19,7 @@ class TripPriceBreakdown {
     this.extras = 0,
     this.pickupPreference = 0,
     this.otherAdjustments = 0,
+    this.promoDiscount = 0,
     this.distanceInMiles,
     this.isRoundTrip = false,
   });
@@ -33,6 +34,7 @@ class TripPriceBreakdown {
   final double extras;
   final double pickupPreference;
   final double otherAdjustments;
+  final double promoDiscount;
   final double? distanceInMiles;
   final bool isRoundTrip;
 
@@ -50,6 +52,7 @@ class PricingCalculator {
     required List<ExtraOptionModel> extraCatalog,
     required List<SelectedExtraOption> selectedExtras,
     AdditionalStopModel? additionalStop,
+    double promoDiscount = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
       return null;
@@ -87,7 +90,11 @@ class PricingCalculator {
 
     // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
     final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    final total = _twoDecimals(subtotal + gratuityAmount);
+    // Promo discount is applied last, against the fully-assembled total —
+    // mirrors the backend's `chargeAmount = max(totalTripFee - discount, 0)`.
+    final total = _twoDecimals(
+      max(subtotal + gratuityAmount - promoDiscount, 0),
+    );
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -98,6 +105,7 @@ class PricingCalculator {
       gratuityPercentage: gratuity?.percentage,
       additionalStops: _twoDecimals(additionalStopPrice),
       extras: extras,
+      promoDiscount: _twoDecimals(promoDiscount),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,
     );
@@ -112,6 +120,7 @@ class PricingCalculator {
     required List<SelectedExtraOption> selectedExtras,
     AdditionalStopModel? additionalStop,
     AirportPickupPreferenceModel? pickupPreference,
+    double promoDiscount = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
       return null;
@@ -154,7 +163,9 @@ class PricingCalculator {
 
     // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
     final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    final total = _twoDecimals(subtotal + gratuityAmount);
+    final total = _twoDecimals(
+      max(subtotal + gratuityAmount - promoDiscount, 0),
+    );
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -166,6 +177,7 @@ class PricingCalculator {
       additionalStops: _twoDecimals(additionalStopPrice),
       extras: extras,
       pickupPreference: _twoDecimals(pickupPreferencePrice),
+      promoDiscount: _twoDecimals(promoDiscount),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,
     );
@@ -177,6 +189,7 @@ class PricingCalculator {
     required GratuityModel? gratuity,
     required List<ExtraOptionModel> extraCatalog,
     required List<SelectedExtraOption> selectedExtras,
+    double promoDiscount = 0,
   }) {
     if (car == null || selectedHours == null || selectedHours <= 0) {
       return null;
@@ -198,7 +211,9 @@ class PricingCalculator {
 
     // Gratuity applies to car fare only.
     final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    final total = _twoDecimals(subtotal + gratuityAmount);
+    final total = _twoDecimals(
+      max(subtotal + gratuityAmount - promoDiscount, 0),
+    );
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -209,6 +224,7 @@ class PricingCalculator {
       gratuityPercentage: gratuity?.percentage,
       extras: extras,
       otherAdjustments: 0,
+      promoDiscount: _twoDecimals(promoDiscount),
       isRoundTrip: false,
     );
   }
