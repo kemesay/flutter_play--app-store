@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/utils/date_utils.dart';
 import 'core/config/square_runtime_config.dart';
+import 'core/referral/pending_referral_store.dart';
 import 'providers/auth_provider.dart';
 import 'providers/booking_provider.dart';
 import 'providers/catalog_provider.dart';
@@ -41,6 +44,11 @@ void main() {
 
   // Initialize timezone data for Pacific timezone formatting
   initializeTimezones();
+
+  // Fire-and-forget: nothing needs a pending referral code before the user
+  // reaches a booking form, so this never delays app startup.
+  unawaited(PendingReferralStore.captureOnFirstLaunch());
+
   runApp(const MyApp());
 }
 

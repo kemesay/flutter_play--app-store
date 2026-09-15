@@ -82,6 +82,17 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
     _passengerEmailController = TextEditingController(text: user?.email ?? '');
     _passengerPhoneController =
         TextEditingController(text: user?.phoneNumber ?? '');
+    _prefillPendingReferralCode();
+  }
+
+  // Picks up a referral code carried through an app-store install (see
+  // PendingReferralStore) — pre-fills the box so all the customer has to
+  // do is tap Apply, same as a code pre-filled from a website link.
+  Future<void> _prefillPendingReferralCode() async {
+    final pendingCode = await PendingReferralStore.peek();
+    if (pendingCode == null || !mounted) return;
+    if (_promoCodeController.text.trim().isNotEmpty) return;
+    setState(() => _promoCodeController.text = pendingCode);
   }
 
   @override
@@ -185,6 +196,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         _promoMessage =
             'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
       });
+      unawaited(PendingReferralStore.consume());
     } catch (error) {
       setState(() {
         _promoDiscount = 0;
@@ -550,8 +562,8 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
           ),
           const SizedBox(height: 24),
           const _ProfessionalSectionHeader(
-            title: '2. Side Pick / Detour Stops',
-            subtitle: 'Add off-route detours — fare adjusts by distance',
+            title: '2. Additional Stop on the way',
+            subtitle: 'Add off route detours, fare adjusts by distance',
           ),
           const SizedBox(height: 8),
           ..._sidePickDetails.asMap().entries.map((entry) {
@@ -601,7 +613,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
               });
             },
             icon: const Icon(Icons.add_location_alt_outlined),
-            label: const Text('Add Detour Stop'),
+            label: const Text('Additional stop on the way'),
             style: OutlinedButton.styleFrom(
               foregroundColor: const Color(0xFFF59E0B),
               side: const BorderSide(color: Color(0xFFF59E0B)),

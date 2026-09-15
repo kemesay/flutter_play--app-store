@@ -1,5 +1,7 @@
 library book_ride_page;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -33,6 +35,7 @@ import 'package:oda_black_car_service/data/models/travel_type.dart';
 import 'package:oda_black_car_service/data/services/directions_service.dart';
 import 'package:oda_black_car_service/data/services/place_service.dart';
 import 'package:oda_black_car_service/data/services/promo_code_service.dart';
+import 'package:oda_black_car_service/core/referral/pending_referral_store.dart';
 import 'package:oda_black_car_service/model/place_model.dart';
 import 'package:oda_black_car_service/providers/auth_provider.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
@@ -3927,6 +3930,13 @@ class _PromoCodeField extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _brandGreen,
                         foregroundColor: Colors.white,
+                        // Overrides the app-wide ElevatedButton theme's
+                        // minimumSize: Size(double.infinity, 48) — that's
+                        // meant for full-width CTA buttons in a Column, but
+                        // this button sits in a Row next to the text field,
+                        // where an infinite-width demand has nothing finite
+                        // to resolve against and crashes layout.
+                        minimumSize: const Size(0, 56),
                       ),
                       child: loading
                           ? const SizedBox(

@@ -134,6 +134,18 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     _passengerEmailController = TextEditingController(text: user?.email ?? '');
     _passengerPhoneController =
         TextEditingController(text: user?.phoneNumber ?? '');
+    _prefillPendingReferralCode();
+  }
+
+  // Picks up a referral code carried through an app-store install (see
+  // PendingReferralStore) — pre-fills the box so all the customer has to
+  // do is tap Apply, same as a code pre-filled from a website link. Only
+  // meaningful for PRE_BOOKED billing — LIVE mode never accepts promo codes.
+  Future<void> _prefillPendingReferralCode() async {
+    final pendingCode = await PendingReferralStore.peek();
+    if (pendingCode == null || !mounted) return;
+    if (_promoCodeController.text.trim().isNotEmpty) return;
+    setState(() => _promoCodeController.text = pendingCode);
   }
 
   @override
@@ -1186,6 +1198,7 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
         _promoMessage =
             'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
       });
+      unawaited(PendingReferralStore.consume());
     } catch (error) {
       setState(() {
         _promoDiscount = 0;
