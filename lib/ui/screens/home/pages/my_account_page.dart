@@ -128,6 +128,10 @@ class _MyAccountPageState extends State<MyAccountPage> {
         ),
         const SizedBox(height: AppSpacing.lg),
 
+        // Savings & Rewards Summary
+        const _DiscountSummaryCard(),
+        const SizedBox(height: AppSpacing.lg),
+
         // Referral Code Section
         const _ReferralCodeCard(),
         const SizedBox(height: AppSpacing.lg),
@@ -741,6 +745,232 @@ class _RideStatCard extends StatelessWidget {
   }
 }
 
+class _DiscountSummaryCard extends StatefulWidget {
+  const _DiscountSummaryCard();
+
+  @override
+  State<_DiscountSummaryCard> createState() => _DiscountSummaryCardState();
+}
+
+class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
+  final _promoCodeService = PromoCodeService();
+
+  bool _loading = true;
+  DiscountSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary();
+  }
+
+  Future<void> _loadSummary() async {
+    try {
+      final summary = await _promoCodeService.getMyDiscountSummary();
+      if (!mounted) return;
+      setState(() {
+        _summary = summary;
+        _loading = false;
+      });
+    } catch (_) {
+      // Non-critical section — fail silently rather than blocking the rest
+      // of the account page (mirrors the referral card's behavior).
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  Widget _progressRow(
+    ThemeData theme,
+    String label,
+    int used,
+    int limit,
+  ) {
+    final colorScheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              Text(
+                '$used of $limit used',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: limit > 0 ? (used / limit).clamp(0.0, 1.0) : 0.0,
+              minHeight: 8,
+              backgroundColor: colorScheme.primary.withOpacity(0.1),
+              valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+            child: SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final summary = _summary;
+    if (summary == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.savings_rounded, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'My Savings & Rewards',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              "Every discount you've used, and every reward you've earned "
+              'by referring friends.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '\$${summary.totalSaved.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        'Total Saved',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '\$${summary.totalReferralRewardsEarned.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        'Earned by Referring',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 16),
+            _progressRow(
+              theme,
+              'First-booking / occasion promo codes',
+              summary.publicCodes.used,
+              summary.publicCodes.limit,
+            ),
+            _progressRow(
+              theme,
+              "Referral codes you've used",
+              summary.referralCodesSpent.used,
+              summary.referralCodesSpent.limit,
+            ),
+            _progressRow(
+              theme,
+              'Referral rewards earned',
+              summary.referralRewardsEarned.used,
+              summary.referralRewardsEarned.limit,
+            ),
+            if (summary.pendingReferralRewards > 0) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.hourglass_top_rounded,
+                      size: 16, color: Colors.amber),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${summary.pendingReferralRewards} referral'
+                      '${summary.pendingReferralRewards > 1 ? 's' : ''} pending '
+                      '— reward arrives once their trip is completed and paid.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ReferralCodeCard extends StatefulWidget {
   const _ReferralCodeCard();
 
@@ -848,7 +1078,7 @@ class _ReferralCodeCardState extends State<_ReferralCodeCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Share your link — your friend gets '
+              'Share your link, your friend gets '
               '${referral.discountValue.toStringAsFixed(0)}% off their first '
               'ride, and you get a reward once they complete it.',
               style: theme.textTheme.bodySmall?.copyWith(

@@ -26,6 +26,67 @@ class ReferralCodeInfo {
   final String shareMessage;
 }
 
+/// One capped bucket in a DiscountSummary — e.g. "2 of 5 public codes used".
+class DiscountCapProgress {
+  const DiscountCapProgress({
+    required this.used,
+    required this.remaining,
+    required this.limit,
+  });
+
+  factory DiscountCapProgress.fromJson(Map<String, dynamic> json) {
+    return DiscountCapProgress(
+      used: (json['used'] as num).toInt(),
+      remaining: (json['remaining'] as num).toInt(),
+      limit: (json['limit'] as num).toInt(),
+    );
+  }
+
+  final int used;
+  final int remaining;
+  final int limit;
+}
+
+/// The signed-in user's full savings/rewards picture — mirrors
+/// `GET /api/v1/promo-codes/my-discount-summary`.
+class DiscountSummary {
+  const DiscountSummary({
+    required this.totalSaved,
+    required this.totalReferralRewardsEarned,
+    required this.publicCodes,
+    required this.referralCodesSpent,
+    required this.referralRewardsEarned,
+    required this.pendingReferralRewards,
+  });
+
+  factory DiscountSummary.fromJson(Map<String, dynamic> json) {
+    double asDouble(dynamic v) =>
+        v is num ? v.toDouble() : double.parse(v.toString());
+
+    return DiscountSummary(
+      totalSaved: asDouble(json['totalSaved']),
+      totalReferralRewardsEarned: asDouble(json['totalReferralRewardsEarned']),
+      publicCodes: DiscountCapProgress.fromJson(
+        json['publicCodes'] as Map<String, dynamic>,
+      ),
+      referralCodesSpent: DiscountCapProgress.fromJson(
+        json['referralCodesSpent'] as Map<String, dynamic>,
+      ),
+      referralRewardsEarned: DiscountCapProgress.fromJson(
+        json['referralRewardsEarned'] as Map<String, dynamic>,
+      ),
+      pendingReferralRewards: (json['pendingReferralRewards'] as num).toInt(),
+    );
+  }
+
+  final double totalSaved;
+  final double totalReferralRewardsEarned;
+  final DiscountCapProgress publicCodes;
+  final DiscountCapProgress referralCodesSpent;
+  final DiscountCapProgress referralRewardsEarned;
+  final int pendingReferralRewards;
+}
+
 /// Public preview of a promo code's discount before booking — mirrors
 /// `POST /api/v1/promo-codes/validate` on the backend. The actual booking
 /// submission re-validates and redeems the code server-side; this is only
@@ -71,5 +132,13 @@ class PromoCodeService {
       link: map['link'] as String,
       shareMessage: map['shareMessage'] as String,
     );
+  }
+
+  Future<DiscountSummary> getMyDiscountSummary() async {
+    final response = await _apiClient.get(
+      '/promo-codes/my-discount-summary',
+      authenticated: true,
+    );
+    return DiscountSummary.fromJson(response as Map<String, dynamic>);
   }
 }
