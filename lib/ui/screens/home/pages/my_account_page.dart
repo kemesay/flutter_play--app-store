@@ -784,9 +784,38 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
     ThemeData theme,
     String label,
     int used,
-    int limit,
+    int? limit,
   ) {
     final colorScheme = theme.colorScheme;
+
+    // Null limit means this bucket is uncapped (e.g. referral rewards
+    // earned) — show a count instead of a progress bar with no ceiling.
+    if (limit == null) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+            Text(
+              '$used earned — unlimited',
+              style: theme.textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: colorScheme.primary,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
       child: Column(

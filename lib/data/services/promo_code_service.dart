@@ -37,14 +37,15 @@ class DiscountCapProgress {
   factory DiscountCapProgress.fromJson(Map<String, dynamic> json) {
     return DiscountCapProgress(
       used: (json['used'] as num).toInt(),
-      remaining: (json['remaining'] as num).toInt(),
-      limit: (json['limit'] as num).toInt(),
+      remaining: (json['remaining'] as num?)?.toInt(),
+      limit: (json['limit'] as num?)?.toInt(),
     );
   }
 
   final int used;
-  final int remaining;
-  final int limit;
+  // Null means this bucket is uncapped (e.g. referral rewards earned).
+  final int? remaining;
+  final int? limit;
 }
 
 /// The signed-in user's full savings/rewards picture — mirrors
