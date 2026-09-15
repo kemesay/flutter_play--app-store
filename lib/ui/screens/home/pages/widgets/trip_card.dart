@@ -670,7 +670,9 @@ class _BookingDetailsDialogState extends State<BookingDetailsDialog> {
                       [
                         _buildDetailRow('Total Trip Fee',
                             '\$${rawData['totalTripFeeInDollars']?.toString() ?? '0.00'}'),
-                        _buildDetailRow('Discount Amount',
+                        _buildDetailRow('Promo Discount',
+                            '\$${rawData['promoDiscountAmountInDollars']?.toString() ?? '0.00'}'),
+                        _buildDetailRow('Manual Discount',
                             '\$${rawData['discountAmountInDollars']?.toString() ?? '0.00'}'),
                         _buildDetailRow('Has Discount Applied',
                             rawData['hasDiscountApplied']?.toString() ?? 'N/A'),
