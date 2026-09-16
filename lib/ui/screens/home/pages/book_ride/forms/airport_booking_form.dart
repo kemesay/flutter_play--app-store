@@ -447,6 +447,10 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         (catalog.pickupPreferences.isNotEmpty
             ? catalog.pickupPreferences.first
             : null);
+    final sideDetourSettings = context.watch<SideDetourSettingsProvider>();
+    final sideDetourFee = _sidePickDetails.isNotEmpty && sideDetourSettings.isActive
+        ? sideDetourSettings.startFee
+        : 0.0;
     final priceBreakdown = PricingCalculator.airport(
       car: selectedCar,
       distanceInMiles: effectiveDistance,
@@ -456,6 +460,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       pickupPreference: effectivePreference,
       promoDiscount: _promoDiscount,
+      sideDetourFee: sideDetourFee,
     );
     _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle =
@@ -1591,6 +1596,12 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
         (catalog.pickupPreferences.isNotEmpty
             ? catalog.pickupPreferences.first
             : null);
+    final sideDetourSettingsForSubmit =
+        context.read<SideDetourSettingsProvider>();
+    final sideDetourFeeForSubmit =
+        _sidePickDetails.isNotEmpty && sideDetourSettingsForSubmit.isActive
+            ? sideDetourSettingsForSubmit.startFee
+            : 0.0;
     final bookingTotal = PricingCalculator.airport(
       car: _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null,
       distanceInMiles: effectiveDistance,
@@ -1600,6 +1611,7 @@ class _AirportBookingFormState extends State<AirportBookingForm> {
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       pickupPreference: effectivePreference,
       promoDiscount: _promoDiscount,
+      sideDetourFee: sideDetourFeeForSubmit,
     )?.total;
 
     if (squareEnabled) {

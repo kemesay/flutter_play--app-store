@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'core/utils/date_utils.dart';
 import 'core/config/square_runtime_config.dart';
+import 'core/config/side_detour_settings_provider.dart';
 import 'core/referral/pending_referral_store.dart';
 import 'providers/auth_provider.dart';
 import 'providers/booking_provider.dart';
@@ -62,6 +63,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => SquareRuntimeConfig()..load()),
+        ChangeNotifierProvider(create: (_) => SideDetourSettingsProvider()..load()),
         ChangeNotifierProvider(create: (_) => AuthProvider()..initialize()),
         ChangeNotifierProvider(create: (_) => CatalogProvider()),
         ChangeNotifierProvider(create: (_) => BookingProvider()),

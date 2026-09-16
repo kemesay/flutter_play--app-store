@@ -18,6 +18,7 @@ class TripPriceBreakdown {
     this.additionalStops = 0,
     this.extras = 0,
     this.pickupPreference = 0,
+    this.sideDetourFee = 0,
     this.otherAdjustments = 0,
     this.promoDiscount = 0,
     this.distanceInMiles,
@@ -33,6 +34,7 @@ class TripPriceBreakdown {
   final double additionalStops;
   final double extras;
   final double pickupPreference;
+  final double sideDetourFee;
   final double otherAdjustments;
   final double promoDiscount;
   final double? distanceInMiles;
@@ -53,6 +55,7 @@ class PricingCalculator {
     required List<SelectedExtraOption> selectedExtras,
     AdditionalStopModel? additionalStop,
     double promoDiscount = 0,
+    double sideDetourFee = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
       return null;
@@ -83,9 +86,18 @@ class PricingCalculator {
 
     final additionalStopPrice = additionalStop?.additionalStopPrice ?? 0;
 
+    // Match website/backend logic: added once, never doubled for round trip
+    // (same treatment as additionalStopPrice) — caller passes 0 when there's
+    // no side-pick detour on this booking, or the setting is off.
+    final sanitizedSideDetourFee = sideDetourFee < 0 ? 0.0 : sideDetourFee;
+
     // Match website logic: totalFee = vehicleFee + totalMinFee + extras + additionalStop
     final subtotal = _twoDecimals(
-      vehicleFeeTotal + totalMinFee + extras + additionalStopPrice,
+      vehicleFeeTotal +
+          totalMinFee +
+          extras +
+          additionalStopPrice +
+          sanitizedSideDetourFee,
     );
 
     // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
@@ -105,6 +117,7 @@ class PricingCalculator {
       gratuityPercentage: gratuity?.percentage,
       additionalStops: _twoDecimals(additionalStopPrice),
       extras: extras,
+      sideDetourFee: _twoDecimals(sanitizedSideDetourFee),
       promoDiscount: _twoDecimals(promoDiscount),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,
@@ -121,6 +134,7 @@ class PricingCalculator {
     AdditionalStopModel? additionalStop,
     AirportPickupPreferenceModel? pickupPreference,
     double promoDiscount = 0,
+    double sideDetourFee = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
       return null;
@@ -152,13 +166,20 @@ class PricingCalculator {
     final additionalStopPrice = additionalStop?.additionalStopPrice ?? 0;
     final pickupPreferencePrice = pickupPreference?.preferencePrice ?? 0;
 
+    // Match website/backend logic: added once, never doubled for round trip
+    // (same treatment as additionalStopPrice/pickupPreferencePrice) — caller
+    // passes 0 when there's no side-pick detour on this booking, or the
+    // setting is off.
+    final sanitizedSideDetourFee = sideDetourFee < 0 ? 0.0 : sideDetourFee;
+
     // Match website logic: totalFee = vehicleFee + totalMinFee + extras + additionalStop + pickupPreference
     final subtotal = _twoDecimals(
       vehicleFeeTotal +
           totalMinFee +
           extras +
           additionalStopPrice +
-          pickupPreferencePrice,
+          pickupPreferencePrice +
+          sanitizedSideDetourFee,
     );
 
     // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
@@ -177,6 +198,7 @@ class PricingCalculator {
       additionalStops: _twoDecimals(additionalStopPrice),
       extras: extras,
       pickupPreference: _twoDecimals(pickupPreferencePrice),
+      sideDetourFee: _twoDecimals(sanitizedSideDetourFee),
       promoDiscount: _twoDecimals(promoDiscount),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,

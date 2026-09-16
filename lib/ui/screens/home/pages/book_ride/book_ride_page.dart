@@ -15,6 +15,7 @@ import 'package:oda_black_car_service/core/utils/booking_square_payment.dart';
 import 'package:oda_black_car_service/core/utils/distance_utils.dart';
 import 'package:oda_black_car_service/core/utils/pricing_calculator.dart';
 import 'package:oda_black_car_service/core/config/square_runtime_config.dart';
+import 'package:oda_black_car_service/core/config/side_detour_settings_provider.dart';
 import 'package:oda_black_car_service/data/models/additional_stop_model.dart';
 import 'package:oda_black_car_service/data/models/airport_booking_request.dart';
 import 'package:oda_black_car_service/data/models/airport_pickup_preference_model.dart';

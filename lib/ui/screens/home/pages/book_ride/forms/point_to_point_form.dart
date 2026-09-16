@@ -446,6 +446,10 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     final selectedCar =
         _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final selectedGratuity = _findGratuity(catalog, _selectedGratuityId);
+    final sideDetourSettings = context.watch<SideDetourSettingsProvider>();
+    final sideDetourFee = _sidePickDetails.isNotEmpty && sideDetourSettings.isActive
+        ? sideDetourSettings.startFee
+        : 0.0;
     final priceBreakdown = PricingCalculator.pointToPoint(
       car: selectedCar,
       distanceInMiles: distanceInMiles,
@@ -454,6 +458,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       promoDiscount: _promoDiscount,
+      sideDetourFee: sideDetourFee,
     );
     _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle = _buildPointToPointPricingSubtitle(distanceInMiles);
@@ -1485,6 +1490,12 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     }
 
     final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+    final sideDetourSettingsForSubmit =
+        context.read<SideDetourSettingsProvider>();
+    final sideDetourFeeForSubmit =
+        _sidePickDetails.isNotEmpty && sideDetourSettingsForSubmit.isActive
+            ? sideDetourSettingsForSubmit.startFee
+            : 0.0;
     final bookingTotal = PricingCalculator.pointToPoint(
       car: _selectedCarId != null
           ? context.read<CatalogProvider>().findCarById(_selectedCarId!)
@@ -1498,6 +1509,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       extraCatalog: context.read<CatalogProvider>().extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       promoDiscount: _promoDiscount,
+      sideDetourFee: sideDetourFeeForSubmit,
     )?.total;
 
     if (squareEnabled) {
