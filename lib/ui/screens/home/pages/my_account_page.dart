@@ -941,14 +941,14 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '\$${summary.totalReferralRewardsEarned.toStringAsFixed(2)}',
+                        '${summary.referralRewardsEarned.used}',
                         style: theme.textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.primary,
                         ),
                       ),
                       Text(
-                        'Earned by Referring',
+                        'Rewards Earned by Referring',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),

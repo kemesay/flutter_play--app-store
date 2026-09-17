@@ -53,7 +53,6 @@ class DiscountCapProgress {
 class DiscountSummary {
   const DiscountSummary({
     required this.totalSaved,
-    required this.totalReferralRewardsEarned,
     required this.publicCodes,
     required this.referralCodesSpent,
     required this.referralRewardsEarned,
@@ -66,7 +65,6 @@ class DiscountSummary {
 
     return DiscountSummary(
       totalSaved: asDouble(json['totalSaved']),
-      totalReferralRewardsEarned: asDouble(json['totalReferralRewardsEarned']),
       publicCodes: DiscountCapProgress.fromJson(
         json['publicCodes'] as Map<String, dynamic>,
       ),
@@ -81,7 +79,10 @@ class DiscountSummary {
   }
 
   final double totalSaved;
-  final double totalReferralRewardsEarned;
+  // No dollar total here — a referral reward is now a %-off code rather
+  // than a fixed $ amount, so there's no known dollar value until (and
+  // unless) it's actually redeemed. referralRewardsEarned.used below is
+  // the meaningful "how many you've earned" number instead.
   final DiscountCapProgress publicCodes;
   final DiscountCapProgress referralCodesSpent;
   final DiscountCapProgress referralRewardsEarned;
