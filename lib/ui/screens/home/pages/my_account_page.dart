@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:provider/provider.dart';
@@ -130,6 +132,10 @@ class _MyAccountPageState extends State<MyAccountPage> {
 
         // Savings & Rewards Summary
         const _DiscountSummaryCard(),
+        const SizedBox(height: AppSpacing.lg),
+
+        // Active Promotion (a currently-live public promo code, if any)
+        const _ActivePromoCard(),
         const SizedBox(height: AppSpacing.lg),
 
         // Referral Code Section
@@ -993,6 +999,186 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
                 ],
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActivePromoCard extends StatefulWidget {
+  const _ActivePromoCard();
+
+  @override
+  State<_ActivePromoCard> createState() => _ActivePromoCardState();
+}
+
+class _ActivePromoCardState extends State<_ActivePromoCard> {
+  final _promoCodeService = PromoCodeService();
+
+  bool _loading = true;
+  ActivePublicPromo? _promo;
+  Timer? _countdownTimer;
+  String _countdown = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPromo();
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadPromo() async {
+    try {
+      final promo = await _promoCodeService.getActivePublicPromo();
+      if (!mounted) return;
+      setState(() {
+        _promo = promo;
+        _loading = false;
+      });
+      _startCountdownIfNeeded();
+    } catch (_) {
+      // Non-critical section — fail silently, same as the other account cards.
+      if (!mounted) return;
+      setState(() => _loading = false);
+    }
+  }
+
+  void _startCountdownIfNeeded() {
+    if (_promo?.expiresAt == null) return;
+    _tickCountdown();
+    _countdownTimer =
+        Timer.periodic(const Duration(seconds: 1), (_) => _tickCountdown());
+  }
+
+  void _tickCountdown() {
+    final expiresAt = _promo?.expiresAt;
+    if (expiresAt == null || !mounted) return;
+    setState(() => _countdown = _formatCountdown(expiresAt.difference(DateTime.now())));
+  }
+
+  static String _formatCountdown(Duration remaining) {
+    if (remaining.isNegative) return 'Expired';
+    final days = remaining.inDays;
+    final hours = remaining.inHours % 24;
+    final minutes = remaining.inMinutes % 60;
+    final seconds = remaining.inSeconds % 60;
+    if (days > 0) return '${days}d ${hours}h';
+    if (hours > 0) return '${hours}h ${minutes}m';
+    if (minutes > 0) return '${minutes}m ${seconds}s';
+    return '${seconds}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+            child: SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final promo = _promo;
+    if (promo == null) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.local_offer_rounded, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Active Promotion',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'A current promo code you can use right now on your next booking.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  promo.code,
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: colorScheme.primary,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  promo.discountLabel,
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 16,
+              runSpacing: 6,
+              children: [
+                if (_countdown.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.timer_outlined,
+                          size: 16, color: theme.colorScheme.onSurfaceVariant),
+                      const SizedBox(width: 4),
+                      Text(
+                        'Expires in $_countdown',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                Text(
+                  '${promo.remainingUses} use${promo.remainingUses == 1 ? '' : 's'} left for you',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if ((promo.minFareAmount ?? 0) > 0)
+                  Text(
+                    'Minimum fare \$${promo.minFareAmount!.toStringAsFixed(2)}',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

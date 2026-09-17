@@ -88,6 +88,50 @@ class DiscountSummary {
   final int pendingReferralRewards;
 }
 
+/// The current active public campaign this signed-in customer can still
+/// use, for an "Active Promotion" card on the account page — mirrors
+/// `GET /api/v1/promo-codes/active-public`. Null (see
+/// `PromoCodeService.getActivePublicPromo`) means nothing is live for them
+/// right now, whether because no campaign is active or they've already used
+/// up their allowance on every one that is.
+class ActivePublicPromo {
+  const ActivePublicPromo({
+    required this.code,
+    required this.discountType,
+    required this.discountValue,
+    required this.minFareAmount,
+    required this.expiresAt,
+    required this.remainingUses,
+  });
+
+  factory ActivePublicPromo.fromJson(Map<String, dynamic> json) {
+    return ActivePublicPromo(
+      code: json['code'] as String,
+      discountType: json['discountType'] as String,
+      // Sequelize DECIMAL columns can serialize as JSON strings — parse
+      // defensively rather than assuming a number, same as discountValue
+      // on ReferralCodeInfo above.
+      discountValue: double.parse(json['discountValue'].toString()),
+      minFareAmount: json['minFareAmount'] == null
+          ? null
+          : double.parse(json['minFareAmount'].toString()),
+      expiresAt:
+          json['expiresAt'] == null ? null : DateTime.tryParse(json['expiresAt'] as String),
+      remainingUses: (json['remainingUses'] as num).toInt(),
+    );
+  }
+
+  final String code;
+  final String discountType; // "percent" | "flat"
+  final double discountValue;
+  final double? minFareAmount;
+  final DateTime? expiresAt;
+  final int remainingUses;
+
+  String get discountLabel =>
+      discountType == 'flat' ? '\$${discountValue.toStringAsFixed(2)} off' : '${discountValue.toStringAsFixed(0)}% off';
+}
+
 /// Public preview of a promo code's discount before booking — mirrors
 /// `POST /api/v1/promo-codes/validate` on the backend. The actual booking
 /// submission re-validates and redeems the code server-side; this is only
@@ -141,5 +185,16 @@ class PromoCodeService {
       authenticated: true,
     );
     return DiscountSummary.fromJson(response as Map<String, dynamic>);
+  }
+
+  /// Null when there's nothing live for this customer right now.
+  Future<ActivePublicPromo?> getActivePublicPromo() async {
+    final response = await _apiClient.get(
+      '/promo-codes/active-public',
+      authenticated: true,
+    );
+    final map = response as Map<String, dynamic>;
+    if (map['available'] != true) return null;
+    return ActivePublicPromo.fromJson(map);
   }
 }
