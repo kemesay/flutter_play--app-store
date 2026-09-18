@@ -790,12 +790,15 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
     ThemeData theme,
     String label,
     int used,
-    int? limit,
-  ) {
+    int? limit, {
+    String verb = 'earned',
+  }) {
     final colorScheme = theme.colorScheme;
 
     // Null limit means this bucket is uncapped (e.g. referral rewards
-    // earned) — show a count instead of a progress bar with no ceiling.
+    // earned, or public codes now that each code caps itself instead of a
+    // shared lifetime bucket) — show a count instead of a progress bar with
+    // no ceiling.
     if (limit == null) {
       return Padding(
         padding: const EdgeInsets.only(bottom: AppSpacing.sm),
@@ -811,7 +814,7 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
               ),
             ),
             Text(
-              '$used earned — unlimited',
+              '$used $verb — unlimited',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: colorScheme.primary,
@@ -966,6 +969,7 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
               'First-booking / occasion promo codes',
               summary.publicCodes.used,
               summary.publicCodes.limit,
+              verb: 'used',
             ),
             _progressRow(
               theme,
