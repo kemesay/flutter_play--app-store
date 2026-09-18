@@ -100,13 +100,18 @@ class PricingCalculator {
           sanitizedSideDetourFee,
     );
 
-    // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
-    final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    // Promo discount is applied last, against the fully-assembled total —
-    // mirrors the backend's `chargeAmount = max(totalTripFee - discount, 0)`.
-    final total = _twoDecimals(
-      max(subtotal + gratuityAmount - promoDiscount, 0),
-    );
+    // A promo discount reduces the ride's own cost — gratuity should be a
+    // tip on what the ride actually costs after that discount, not the
+    // pre-discount sticker price. Discount is subtracted from the subtotal
+    // BEFORE gratuity is added (mirrors the backend's chargeAmount rule,
+    // now applied before gratuity instead of after it), and gratuity itself
+    // is computed on baseFare scaled down by its proportional share of the
+    // discount — reduces to exactly baseFare when there's no discount, so
+    // an undiscounted booking's gratuity is unchanged.
+    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
+    final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -182,11 +187,13 @@ class PricingCalculator {
           sanitizedSideDetourFee,
     );
 
-    // Gratuity is calculated on baseFare (vehicleFee + minimumStartFee)
-    final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    final total = _twoDecimals(
-      max(subtotal + gratuityAmount - promoDiscount, 0),
-    );
+    // See pointToPoint() above for why discount is subtracted before
+    // gratuity is added, and why gratuity itself is computed on a
+    // discount-scaled baseFare rather than the pre-discount figure.
+    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
+    final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -231,11 +238,14 @@ class PricingCalculator {
 
     final subtotal = _twoDecimals(vehicleFeeTotal + extras);
 
+    // See pointToPoint() above for why discount is subtracted before
+    // gratuity is added, and why gratuity itself is computed on a
+    // discount-scaled baseFare rather than the pre-discount figure.
     // Gratuity applies to car fare only.
-    final gratuityAmount = _calculateGratuity(baseFare, gratuity);
-    final total = _twoDecimals(
-      max(subtotal + gratuityAmount - promoDiscount, 0),
-    );
+    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
+    final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
     return TripPriceBreakdown(
       currency: car.currency,
@@ -274,6 +284,16 @@ class PricingCalculator {
     }
 
     return _twoDecimals(total);
+  }
+
+  /// Scales [carFare] down by whatever fraction of [discount] falls on it,
+  /// proportional to its share of [subtotal] — extras/stops/side-detour
+  /// fees are never part of the gratuity base, discounted or not, same as
+  /// before. Reduces to exactly [carFare] when there's no discount.
+  static double _discountedCarFare(double carFare, double subtotal, double discount) {
+    if (discount <= 0 || subtotal <= 0) return carFare;
+    final carFareShareOfDiscount = (discount * carFare) / subtotal;
+    return max(carFare - carFareShareOfDiscount, 0);
   }
 
   static double _calculateGratuity(double baseFare, GratuityModel? gratuity) {
