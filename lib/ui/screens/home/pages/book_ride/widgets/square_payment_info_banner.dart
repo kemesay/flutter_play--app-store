@@ -49,10 +49,10 @@ class SquarePaymentInfoBanner extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 4),
-          _bullet(context, 'Saved wallet card — fastest checkout'),
+          _bullet(context, 'Saved wallet card, fastest checkout'),
           _bullet(
             context,
-            'New card — verify before you confirm the booking',
+            'New card, verify before you confirm the booking',
           ),
         ],
       ),
