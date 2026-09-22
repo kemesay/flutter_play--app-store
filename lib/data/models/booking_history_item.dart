@@ -17,6 +17,7 @@ class BookingHistoryItem {
     this.pickupAddress,
     this.dropoffAddress,
     this.totalFee,
+    this.sideDetourFee,
     this.tripType,
     this.passengerName,
     this.carImageUrl,
@@ -34,6 +35,11 @@ class BookingHistoryItem {
   final String? pickupAddress;
   final String? dropoffAddress;
   final double? totalFee;
+  // Not its own persisted column server-side — the backend attaches it
+  // (best-effort, from the booking's side-pick stops + the CURRENT admin
+  // Side Detour setting) to the GET response this model is built from. Null
+  // for Hourly Charter, which has no route to detour from.
+  final double? sideDetourFee;
   final String? tripType;
   final String? passengerName;
   final String? carImageUrl;
@@ -55,6 +61,7 @@ class BookingHistoryItem {
       pickupAddress: pickupAddress,
       dropoffAddress: dropoffAddress,
       totalFee: totalFee,
+      sideDetourFee: sideDetourFee,
       tripType: tripType,
       passengerName: passengerName,
       carImageUrl: carImageUrl,
@@ -94,6 +101,7 @@ class BookingHistoryItem {
       pickupAddress: _resolvePickupAddress(json, type),
       dropoffAddress: _resolveDropoffAddress(json, type),
       totalFee: _parseDouble(json['totalTripFeeInDollars']),
+      sideDetourFee: _parseDouble(json['sideDetourFee']),
       tripType: json['tripType']?.toString(),
       passengerName: json['passengerFullName']?.toString(),
       carImageUrl: _resolveCarImageUrl(json),

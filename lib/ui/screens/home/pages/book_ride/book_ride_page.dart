@@ -4001,6 +4001,8 @@ class _TripPriceSummaryCard extends StatelessWidget {
       if (breakdown.pickupPreference > 0)
         _PricingLine(
             label: 'Pickup preference', amount: breakdown.pickupPreference),
+      if (breakdown.sideDetourFee > 0)
+        _PricingLine(label: 'Side detour fee', amount: breakdown.sideDetourFee),
       if (breakdown.extras > 0)
         _PricingLine(label: 'Enhancements', amount: breakdown.extras),
       if (breakdown.otherAdjustments > 0)

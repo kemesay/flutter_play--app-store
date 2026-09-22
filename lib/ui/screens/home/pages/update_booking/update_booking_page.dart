@@ -1263,6 +1263,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           selectedExtras: _selectedExtras,
           additionalStop: _hasAdditionalStop ? additionalStop : null,
           pickupPreference: pickupPref,
+          sideDetourFee: widget.booking.sideDetourFee ?? 0,
         );
       case BookingType.pointToPoint:
         return PricingCalculator.pointToPoint(
@@ -1273,6 +1274,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           extraCatalog: catalog.extraOptions,
           selectedExtras: _selectedExtras,
           additionalStop: _hasAdditionalStop ? additionalStop : null,
+          sideDetourFee: widget.booking.sideDetourFee ?? 0,
         );
       case BookingType.hourlyCharter:
         return PricingCalculator.hourlyCharter(
