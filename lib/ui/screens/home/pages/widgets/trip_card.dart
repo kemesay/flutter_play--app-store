@@ -382,12 +382,16 @@ class _BookingDetailsDialogState extends State<BookingDetailsDialog> {
   Map<String, dynamic>? _liveStatus;
   Timer? _liveTimer;
 
+  // Only actually locked from self-service editing once the trip is BOTH
+  // completed AND paid in full — matches the backend's own update guard
+  // exactly (updatePointToPointBookForUser / updateAirportBookForUser /
+  // updateHourlyCharterBookForUser). Every other status, including
+  // CANCELLED/REJECTED, is intentionally still editable.
   bool get _canEdit {
     if (!widget.allowEdit) return false;
     final status = widget.booking.bookingStatus.toUpperCase();
-    return status != 'COMPLETED' &&
-        status != 'CANCELLED' &&
-        status != 'REJECTED';
+    final paymentStatus = widget.booking.paymentStatus.toUpperCase();
+    return !(status == 'COMPLETED' && paymentStatus == 'PAID');
   }
 
   bool get _shouldPollLiveStatus {

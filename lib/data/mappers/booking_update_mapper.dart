@@ -50,6 +50,9 @@ class BookingEditFormData {
     this.dropoffLongitude,
     this.selectedHours,
     this.occasion,
+    this.sidePicks = const [],
+    this.appliedPromoCode,
+    this.promoDiscount = 0,
   });
 
   final int bookingId;
@@ -93,6 +96,15 @@ class BookingEditFormData {
   final double? dropoffLongitude;
   final int? selectedHours;
   final String? occasion;
+  // Side-pick detour stops the booking already has (P2P/Airport only) — the
+  // create forms have full add/remove UI for this, it just never had
+  // anything to pre-fill from an existing booking until now.
+  final List<PlaceDetail> sidePicks;
+  // Not their own persisted columns — sourced from the confirmed
+  // PromoCodeRedemption row for this booking (see getAppliedPromoCodeForBooking
+  // on the backend), display-only, same idea as sidePicks/sideDetourFee above.
+  final String? appliedPromoCode;
+  final double promoDiscount;
 
   PlaceDetail? get airportPlaceDetail {
     if (airportLocationAddress == null ||
@@ -210,7 +222,47 @@ class BookingUpdateMapper {
       dropoffLongitude: _parseDouble(json['dropoffLongitude']),
       selectedHours: _parseInt(json['selectedHours'], fallback: 5),
       occasion: _normalizeOccasion(json['occasion']?.toString()),
+      sidePicks: _resolveSidePicks(json, booking.id),
+      // Uppercased defensively — a code applied before every code was
+      // normalized to uppercase (e.g. an older lowercase-stored referral
+      // code) should never surface in a different case than what the
+      // customer would type themselves.
+      appliedPromoCode: json['appliedPromoCode']?.toString().toUpperCase(),
+      promoDiscount: _parseDouble(json['promoDiscountAmountInDollars']) ?? 0,
     );
+  }
+
+  static List<PlaceDetail> _resolveSidePicks(
+    Map<String, dynamic> json,
+    int bookingId,
+  ) {
+    final raw = json['SidePickDetours'];
+    if (raw is! List) return const [];
+
+    final parsed = <MapEntry<int, PlaceDetail>>[];
+    for (final item in raw) {
+      if (item is! Map) continue;
+      final map = Map<String, dynamic>.from(item);
+      final address = map['address']?.toString();
+      final lat = _parseDouble(map['latitude']);
+      final lng = _parseDouble(map['longitude']);
+      if (address == null || lat == null || lng == null) continue;
+      final sortOrder = _parseInt(map['sortOrder']);
+      parsed.add(
+        MapEntry(
+          sortOrder,
+          PlaceDetail(
+            placeId:
+                'booking-sidepick-$bookingId-${map['sidePickId'] ?? parsed.length}',
+            formattedAddress: address,
+            lat: lat,
+            lng: lng,
+          ),
+        ),
+      );
+    }
+    parsed.sort((a, b) => a.key.compareTo(b.key));
+    return parsed.map((e) => e.value).toList();
   }
 
   /// Canonical occasion labels used by hourly charter forms and PATCH bodies.

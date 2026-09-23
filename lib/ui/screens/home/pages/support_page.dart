@@ -193,10 +193,34 @@ class SupportPage extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      // Messaging form section
-                      const AppCard(
-                        padding: EdgeInsets.all(20),
-                        child: _SupportForm(),
+                      // Messaging form — opens as a scrollable pop-up instead
+                      // of sitting inline here, so it's reachable in one tap
+                      // instead of scrolling all the way past Contact Methods
+                      // to find it.
+                      AppCard(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const AppSectionHeader(title: "Still need help?"),
+                            const SizedBox(height: 8),
+                            Text(
+                              "Send our support team a message and we'll get back to you shortly.",
+                              style: CustomStyles.smallTextStyle
+                                  .copyWith(color: Colors.grey.shade600),
+                            ),
+                            const SizedBox(height: 20),
+                            SizedBox(
+                              width: double.infinity,
+                              child: AppPrimaryButton(
+                                label: 'Send us a message',
+                                icon: Icons.mail_outline,
+                                onPressed: () =>
+                                    _showSupportFormSheet(context),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -204,6 +228,60 @@ class SupportPage extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// Opens the "Send us a message" form as a scrollable, draggable pop-up
+  /// sheet rather than inline content — reachable in one tap, and the sheet
+  /// itself scrolls internally so all five fields plus the submit button stay
+  /// reachable even with the keyboard open on a small screen.
+  void _showSupportFormSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (context, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(24),
+              topRight: Radius.circular(24),
+            ),
+          ),
+          child: Padding(
+            // Keeps the focused field above the keyboard instead of hidden
+            // behind it.
+            padding:
+                EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+            child: SingleChildScrollView(
+              controller: scrollController,
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const _SupportForm(),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

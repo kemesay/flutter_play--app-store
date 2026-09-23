@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, rootBundle;
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -758,11 +760,18 @@ class _DiscountSummaryCard extends StatefulWidget {
   State<_DiscountSummaryCard> createState() => _DiscountSummaryCardState();
 }
 
-class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
+class _DiscountSummaryCardState extends State<_DiscountSummaryCard>
+    with AutomaticKeepAliveClientMixin {
   final _promoCodeService = PromoCodeService();
 
   bool _loading = true;
   DiscountSummary? _summary;
+
+  // Without this, ListView disposes this card's State (and re-fetches from
+  // scratch) once it scrolls far enough outside the viewport's cache extent
+  // — the exact "reloads every time I scroll" symptom this fixes.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -814,7 +823,7 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
               ),
             ),
             Text(
-              '$used $verb — unlimited',
+              '$used $verb of unlimited',
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: colorScheme.primary,
@@ -866,6 +875,7 @@ class _DiscountSummaryCardState extends State<_DiscountSummaryCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     if (_loading) {
       return const Card(
         child: Padding(
@@ -1017,13 +1027,20 @@ class _ActivePromoCard extends StatefulWidget {
   State<_ActivePromoCard> createState() => _ActivePromoCardState();
 }
 
-class _ActivePromoCardState extends State<_ActivePromoCard> {
+class _ActivePromoCardState extends State<_ActivePromoCard>
+    with AutomaticKeepAliveClientMixin {
   final _promoCodeService = PromoCodeService();
 
   bool _loading = true;
   ActivePublicPromo? _promo;
   Timer? _countdownTimer;
   String _countdown = '';
+
+  // Without this, ListView disposes this card's State (and re-fetches from
+  // scratch) once it scrolls far enough outside the viewport's cache extent
+  // — the exact "reloads every time I scroll" symptom this fixes.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -1080,6 +1097,7 @@ class _ActivePromoCardState extends State<_ActivePromoCard> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     if (_loading) {
       return const Card(
         child: Padding(
@@ -1124,7 +1142,8 @@ class _ActivePromoCardState extends State<_ActivePromoCard> {
             ),
             const SizedBox(height: 4),
             Text(
-              'A current promo code you can use right now on your next booking.',
+              'A public promo is a limited-time deal open to every customer, '
+              'great for seasonal offers and special occasions.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),
@@ -1197,12 +1216,19 @@ class _ReferralCodeCard extends StatefulWidget {
   State<_ReferralCodeCard> createState() => _ReferralCodeCardState();
 }
 
-class _ReferralCodeCardState extends State<_ReferralCodeCard> {
+class _ReferralCodeCardState extends State<_ReferralCodeCard>
+    with AutomaticKeepAliveClientMixin {
   final _promoCodeService = PromoCodeService();
 
   bool _loading = true;
   ReferralCodeInfo? _referral;
   bool _copied = false;
+
+  // Without this, ListView disposes this card's State (and re-fetches from
+  // scratch) once it scrolls far enough outside the viewport's cache extent
+  // — the exact "reloads every time I scroll" symptom this fixes.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -1247,12 +1273,35 @@ class _ReferralCodeCardState extends State<_ReferralCodeCard> {
       ShareParams(
         text: referral.shareMessage,
         subject: 'ODA Transportation — Refer a Friend',
+        files: await _referralShareImage(),
       ),
     );
   }
 
+  /// Attaches the promo card image alongside the referral text/link so it
+  /// shows up as an actual photo in the share sheet (iMessage, WhatsApp,
+  /// Instagram DM, ...) — guaranteed, unlike relying on the receiving app to
+  /// fetch and unfurl the link's Open Graph preview image, which plain SMS
+  /// and some clients never do at all. share_plus needs a real file on disk
+  /// to hand to the native share sheet, so the bundled asset is copied to
+  /// the OS temp directory once per share (cheap, and self-cleaning).
+  Future<List<XFile>> _referralShareImage() async {
+    try {
+      final asset = await rootBundle.load('assets/images/social_share.jpg');
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/oda_referral_share.jpg');
+      await file.writeAsBytes(asset.buffer.asUint8List(), flush: true);
+      return [XFile(file.path, mimeType: 'image/jpeg')];
+    } catch (_) {
+      // Missing/unwritable image is never worth blocking the share over —
+      // the text/link alone (with its own Open Graph preview) still works.
+      return const [];
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
     if (_loading) {
       return const Card(
         child: Padding(
@@ -1297,9 +1346,9 @@ class _ReferralCodeCardState extends State<_ReferralCodeCard> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Share your link, your friend gets '
+              'Your personal code is used to invite unlimited friends. Each gets '
               '${referral.discountValue.toStringAsFixed(0)}% off their first '
-              'ride, and you get a reward once they complete it.',
+              'ride, and you earn a reward every time one completes and pays for it.',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
               ),

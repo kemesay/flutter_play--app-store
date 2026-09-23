@@ -2,6 +2,10 @@ import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:oda_black_car_service/core/config/side_detour_settings_provider.dart';
+import 'package:oda_black_car_service/core/config/square_runtime_config.dart';
+import 'package:oda_black_car_service/core/exceptions/api_exception.dart';
+import 'package:oda_black_car_service/core/utils/booking_square_payment.dart';
 import 'package:oda_black_car_service/core/utils/distance_utils.dart';
 import 'package:oda_black_car_service/core/utils/name_validator.dart';
 import 'package:oda_black_car_service/core/utils/pricing_calculator.dart';
@@ -13,13 +17,18 @@ import 'package:oda_black_car_service/data/models/booking_history_item.dart';
 import 'package:oda_black_car_service/data/models/car_model.dart';
 import 'package:oda_black_car_service/data/models/gratuity_model.dart';
 import 'package:oda_black_car_service/data/models/hourly_charter_booking_update_request.dart';
+import 'package:oda_black_car_service/data/models/payment_method_type.dart';
 import 'package:oda_black_car_service/data/models/point_to_point_booking_update_request.dart';
 import 'package:oda_black_car_service/data/models/selected_extra_option.dart';
+import 'package:oda_black_car_service/data/models/square_payment_payload.dart';
 import 'package:oda_black_car_service/data/services/directions_service.dart';
 import 'package:oda_black_car_service/data/services/place_service.dart';
+import 'package:oda_black_car_service/data/services/promo_code_service.dart';
 import 'package:oda_black_car_service/model/place_model.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
 import 'package:oda_black_car_service/providers/catalog_provider.dart';
+import 'package:oda_black_car_service/providers/payment_provider.dart';
+import 'package:oda_black_car_service/ui/screens/home/pages/book_ride/widgets/square_payment_method_section.dart';
 import 'package:oda_black_car_service/ui/theme/app_tokens.dart';
 import 'package:oda_black_car_service/ui/widgets/app_card.dart';
 import 'package:oda_black_car_service/ui/widgets/app_primary_button.dart';
@@ -33,6 +42,8 @@ import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
 const _brandGreen = Color(0xFF03930A);
+
+enum _PromoStatus { idle, loading, applied, error }
 
 class UpdateBookingPage extends StatefulWidget {
   const UpdateBookingPage({super.key, required this.booking});
@@ -87,6 +98,39 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
   late final Set<int> _initialExtraOptionIds;
   late final double? _bookedTripTotalFee;
   late final double? _initialGratuityPercentage;
+
+  // Side-pick detour stops (P2P / Airport only) — same add/remove pattern as
+  // the create forms, pre-filled from whatever stops the booking already has.
+  final List<PlaceDetail?> _sidePickDetails = [];
+  final List<TextEditingController> _sidePickControllers = [];
+
+  // Promo code — pre-filled from whatever's already applied to this booking.
+  // `_promoTouched` tracks whether the customer explicitly applied/removed a
+  // code THIS session (no Formik-style touched-tracking in Flutter), since
+  // the save payload must be able to tell "leave whatever's already applied
+  // alone" apart from "the customer just cleared it" — both look like an
+  // empty string otherwise.
+  final _promoCodeService = PromoCodeService();
+  late final TextEditingController _promoCodeController;
+  _PromoStatus _promoStatus = _PromoStatus.idle;
+  String? _promoMessage;
+  String? _appliedPromoCode;
+  double _promoDiscount = 0;
+  bool _promoTouched = false;
+
+  // Payment method — like promo code, opt-in and touched-gated: the customer
+  // must explicitly tap "Change payment method" before this section even
+  // renders, and only then does the save payload include payment fields at
+  // all. `_paymentMethod` starts on a "legacy default" sentinel value
+  // (primaryCard) purely so SquarePaymentMethodSection's own built-in
+  // defaulting (primary card -> first saved card -> new card) runs the exact
+  // same way it does for a brand-new booking — see its _maybeApplyDefaults().
+  bool _changingPayment = false;
+  PaymentMethodType _paymentMethod = PaymentMethodType.primaryCard;
+  int? _selectedPaymentDetailId;
+  String? _selectedSquareCardId;
+  SquarePaymentPayload? _squarePayload;
+  double? _squareTokenizedAtTotal;
 
   // Point-to-point / hourly locations
   late final TextEditingController _pickupController;
@@ -147,6 +191,15 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     _selectedExtras.addAll(_initial.extraOptions);
     _initialExtraOptionIds =
         _initial.extraOptions.map((e) => e.extraOptionId).toSet();
+    for (final stop in _initial.sidePicks) {
+      _sidePickDetails.add(stop);
+      _sidePickControllers.add(TextEditingController(text: stop.formattedAddress));
+    }
+    _appliedPromoCode = _initial.appliedPromoCode;
+    _promoDiscount = _initial.promoDiscount;
+    _promoStatus =
+        _appliedPromoCode != null ? _PromoStatus.applied : _PromoStatus.idle;
+    _promoCodeController = TextEditingController(text: _appliedPromoCode ?? '');
     _bookedTripTotalFee = widget.booking.totalFee;
     _initialGratuityPercentage = _parseGratuityPercentage(
       widget.booking.rawData['Gratuity'],
@@ -165,6 +218,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<CatalogProvider>().initialize();
+      context.read<PaymentProvider>().loadCards();
       _refreshRoutePreview();
     });
   }
@@ -184,6 +238,10 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     _additionalStopDescController.dispose();
     _pickupController.dispose();
     _dropoffController.dispose();
+    for (final controller in _sidePickControllers) {
+      controller.dispose();
+    }
+    _promoCodeController.dispose();
     super.dispose();
   }
 
@@ -353,6 +411,34 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       return;
     }
 
+    if (_changingPayment) {
+      final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+      if (!squareEnabled) {
+        CustomSnackbar.show(
+          context,
+          'Payment method changes are not available right now.',
+        );
+        return;
+      }
+      final catalog = context.read<CatalogProvider>();
+      final breakdown = _tripBreakdown(catalog);
+      final paymentError = validateBookingPaymentSelection(
+        paymentMethod: _paymentMethod,
+        paymentDetailId: _selectedPaymentDetailId,
+        squareCardId: _selectedSquareCardId,
+        cardDetails: null,
+        primaryCard: context.read<PaymentProvider>().primaryCard,
+        squarePayload: _squarePayload,
+        squareTokenizedAtTotal: _squareTokenizedAtTotal,
+        currentBookingTotal: breakdown?.total,
+        squareEnabled: true,
+      );
+      if (paymentError != null) {
+        CustomSnackbar.show(context, paymentError);
+        return;
+      }
+    }
+
     bool success = false;
     switch (widget.booking.type) {
       case BookingType.airport:
@@ -430,9 +516,33 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       passengerEmail: _passengerEmailController.text.trim(),
       gratuityId: _selectedGratuityId!,
       specialInstructions: _instructionsController.text.trim(),
+      sidePicks: _sidePicksPayload(),
+      promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      square: _paymentSquarePayload,
+      squareCardId: _paymentSquareCardId,
+      paymentDetailId: _paymentDetailIdForSave,
     );
 
     return provider.updateAirportBooking(_initial.bookingId, request);
+  }
+
+  /// Same shape the create forms send: `{address, latitude, longitude,
+  /// sortOrder}` per confirmed stop. Always returns a real list (possibly
+  /// empty) — the update requests send this unconditionally so removing
+  /// every stop actually clears them server-side, not just "sends nothing."
+  List<Map<String, dynamic>> _sidePicksPayload() {
+    return _sidePickDetails
+        .whereType<PlaceDetail>()
+        .toList()
+        .asMap()
+        .entries
+        .map((e) => <String, dynamic>{
+              'address': e.value.formattedAddress,
+              'latitude': e.value.lat,
+              'longitude': e.value.lng,
+              'sortOrder': e.key,
+            })
+        .toList();
   }
 
   Future<bool> _savePointToPoint(BookingProvider provider) async {
@@ -480,6 +590,11 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       carId: _selectedCarId!,
       gratuityId: _selectedGratuityId!,
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
+      sidePicks: _sidePicksPayload(),
+      promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      square: _paymentSquarePayload,
+      squareCardId: _paymentSquareCardId,
+      paymentDetailId: _paymentDetailIdForSave,
     );
 
     return provider.updatePointToPointBooking(_initial.bookingId, request);
@@ -524,6 +639,11 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       passengerEmail: _passengerEmailController.text.trim(),
       carId: _selectedCarId!,
       gratuityId: _selectedGratuityId!,
+      extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
+      promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      square: _paymentSquarePayload,
+      squareCardId: _paymentSquareCardId,
+      paymentDetailId: _paymentDetailIdForSave,
     );
 
     return provider.updateHourlyCharterBooking(_initial.bookingId, request);
@@ -599,19 +719,27 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         if (widget.booking.type != BookingType.hourlyCharter) ...[
           _buildAdditionalStopSection(catalog),
           const SizedBox(height: AppSpacing.md),
-          if (catalog.extraOptions.isNotEmpty)
-            ExtraOptionsSelector(
-              extraOptions: catalog.extraOptions,
-              selectedOptions: _selectedExtras,
-              originallyBookedIds: _initialExtraOptionIds,
-              highlightOriginalBooking: true,
-              onChanged: (options) => setState(() {
-                _selectedExtras
-                  ..clear()
-                  ..addAll(options);
-              }),
-            ),
+          _buildSidePickSection(),
+          const SizedBox(height: AppSpacing.md),
         ],
+        _buildPromoCodeSection(),
+        const SizedBox(height: AppSpacing.md),
+        // Hourly Charter supports extras at creation time too — this used to
+        // be excluded here along with the additional-stop section above
+        // (which genuinely doesn't apply to hourly), silently making extras
+        // impossible to change once a booking existed.
+        if (catalog.extraOptions.isNotEmpty)
+          ExtraOptionsSelector(
+            extraOptions: catalog.extraOptions,
+            selectedOptions: _selectedExtras,
+            originallyBookedIds: _initialExtraOptionIds,
+            highlightOriginalBooking: true,
+            onChanged: (options) => setState(() {
+              _selectedExtras
+                ..clear()
+                ..addAll(options);
+            }),
+          ),
         const SizedBox(height: AppSpacing.md),
         _UpdateVehiclePicker(
           cars: catalog.cars,
@@ -629,6 +757,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         _buildGratuitySection(catalog),
         const SizedBox(height: AppSpacing.md),
         _buildPriceSummary(catalog),
+        const SizedBox(height: AppSpacing.md),
+        _buildPaymentMethodSection(catalog),
         const SizedBox(height: AppSpacing.md),
         _buildPassengerSection(),
         const SizedBox(height: AppSpacing.md),
@@ -1146,6 +1276,373 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     );
   }
 
+  Widget _buildSidePickSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Additional stop on the way'),
+        Text(
+          'Add off route detours — fare updates automatically.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 8),
+        ..._sidePickDetails.asMap().entries.map((entry) {
+          final idx = entry.key;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: LocationPickerField(
+                    label: 'Detour stop ${idx + 1}',
+                    controller: _sidePickControllers[idx],
+                    placeService: _placeService,
+                    sessionToken: _sessionToken,
+                    country: 'US',
+                    onPlaceSelected: (detail) {
+                      setState(() => _sidePickDetails[idx] = detail);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setState(() {
+                      _sidePickDetails.removeAt(idx);
+                      _sidePickControllers[idx].dispose();
+                      _sidePickControllers.removeAt(idx);
+                    });
+                  },
+                  icon: const Icon(Icons.remove_circle_outline),
+                  color: Colors.red.shade400,
+                  tooltip: 'Remove stop',
+                ),
+              ],
+            ),
+          );
+        }),
+        OutlinedButton.icon(
+          onPressed: () {
+            setState(() {
+              _sidePickDetails.add(null);
+              _sidePickControllers.add(TextEditingController());
+            });
+          },
+          icon: const Icon(Icons.add_location_alt_outlined),
+          label: const Text('Additional stop on the way'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFFF59E0B),
+            side: const BorderSide(color: Color(0xFFF59E0B)),
+            minimumSize: const Size(double.infinity, 44),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Matches the exact `bookingType` strings the backend's promo-code
+  /// endpoints expect — same values the create forms send
+  /// (point_to_point_form.dart / airport_booking_form.dart /
+  /// hourly_charter_form.dart).
+  String get _bookingTypeApiName {
+    switch (widget.booking.type) {
+      case BookingType.pointToPoint:
+        return 'Point to point';
+      case BookingType.airport:
+        return 'Airport Service';
+      case BookingType.hourlyCharter:
+        return 'Hourly Charter';
+    }
+  }
+
+  // All null unless the customer opened "Change payment method" AND picked
+  // that specific method this session — mirrors promoCode's touched-gating
+  // so a customer who never opens the section leaves their payment method
+  // completely untouched server-side.
+  SquarePaymentPayload? get _paymentSquarePayload =>
+      _changingPayment && _paymentMethod == PaymentMethodType.squareNewCard
+          ? _squarePayload
+          : null;
+
+  String? get _paymentSquareCardId =>
+      _changingPayment && _paymentMethod == PaymentMethodType.squareSavedCard
+          ? _selectedSquareCardId
+          : null;
+
+  int? get _paymentDetailIdForSave =>
+      _changingPayment && _paymentMethod == PaymentMethodType.squareSavedCard
+          ? _selectedPaymentDetailId
+          : null;
+
+  Future<void> _handleApplyPromoCode() async {
+    final code = _promoCodeController.text.trim().toUpperCase();
+    if (code.isEmpty) return;
+    final catalog = context.read<CatalogProvider>();
+    final currentTotal = _tripBreakdown(catalog)?.total ?? 0;
+    final baseFare = currentTotal + _promoDiscount;
+    setState(() {
+      _promoStatus = _PromoStatus.loading;
+      _promoMessage = null;
+    });
+    try {
+      final result = await _promoCodeService.validate(
+        code: code,
+        bookingType: _bookingTypeApiName,
+        fareAmount: baseFare > 0 ? baseFare : 0.01,
+      );
+      setState(() {
+        _appliedPromoCode = code;
+        _promoDiscount = result.discount;
+        _promoStatus = _PromoStatus.applied;
+        _promoTouched = true;
+        _promoMessage =
+            'Promo code applied — you saved \$${result.discount.toStringAsFixed(2)}.';
+      });
+    } catch (error) {
+      setState(() {
+        _promoDiscount = 0;
+        _promoStatus = _PromoStatus.error;
+        _promoMessage = error is ApiException
+            ? error.message
+            : "That promo code isn't valid for this trip.";
+      });
+    }
+  }
+
+  void _handleRemovePromoCode() {
+    setState(() {
+      _appliedPromoCode = null;
+      _promoDiscount = 0;
+      _promoCodeController.clear();
+      _promoStatus = _PromoStatus.idle;
+      _promoMessage = null;
+      _promoTouched = true;
+    });
+  }
+
+  /// Best-effort display of whatever's currently on the booking — sourced
+  /// from the raw GET response's `PaymentDetail` association (cardBrand/
+  /// last4), same idea as sideDetourFee/appliedPromoCode elsewhere in this
+  /// file: display-only, never round-tripped back to the server verbatim.
+  String get _currentPaymentLabel {
+    final detail = widget.booking.rawData['PaymentDetail'];
+    if (detail is Map) {
+      final brand = detail['cardBrand']?.toString();
+      final last4 = detail['last4']?.toString();
+      if (brand != null &&
+          brand.isNotEmpty &&
+          last4 != null &&
+          last4.isNotEmpty) {
+        return '$brand •••• $last4';
+      }
+    }
+    if (widget.booking.paymentMethod == 'SQUARE_NEW_CARD') {
+      return 'New card on file';
+    }
+    return 'Card on file';
+  }
+
+  Widget _buildPaymentMethodSection(CatalogProvider catalog) {
+    final breakdown = _tripBreakdown(catalog);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Payment method'),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: _brandGreen.withOpacity(0.25)),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: Text(
+                  _currentPaymentLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              TextButton(
+                onPressed: () =>
+                    setState(() => _changingPayment = !_changingPayment),
+                child: Text(_changingPayment ? 'Cancel' : 'Change'),
+              ),
+            ],
+          ),
+        ),
+        if (_changingPayment) ...[
+          const SizedBox(height: 12),
+          _buildSquarePaymentPicker(breakdown?.total),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildSquarePaymentPicker(double? bookingTotal) {
+    final runtimeConfig = context.watch<SquareRuntimeConfig>();
+    final configLoading = runtimeConfig.isLoading && !runtimeConfig.hasConfig;
+    if (configLoading) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 20),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (!runtimeConfig.squareEnabled) {
+      return Text(
+        "Payment method changes aren't available right now. Please contact support.",
+        style: Theme.of(context).textTheme.bodySmall,
+      );
+    }
+
+    final paymentProvider = context.watch<PaymentProvider>();
+    return SquarePaymentMethodSection(
+      paymentProvider: paymentProvider,
+      paymentMethod: _paymentMethod,
+      selectedPaymentDetailId: _selectedPaymentDetailId,
+      selectedSquareCardId: _selectedSquareCardId,
+      verifiedSquarePayload: _squarePayload,
+      squareTokenizedAtTotal: _squareTokenizedAtTotal,
+      bookingTotal: bookingTotal,
+      cardholderNameHint: NameValidator.format(_passengerNameController.text),
+      onSquareVerified: (payload, total) {
+        setState(() {
+          _squarePayload = payload;
+          _squareTokenizedAtTotal = total;
+        });
+      },
+      onSquareVerificationCleared: () {
+        setState(() {
+          _squarePayload = null;
+          _squareTokenizedAtTotal = null;
+        });
+      },
+      onMethodChanged: (method) {
+        setState(() {
+          _paymentMethod = method;
+          if (method != PaymentMethodType.squareSavedCard) {
+            _selectedPaymentDetailId = null;
+            _selectedSquareCardId = null;
+          }
+          if (method != PaymentMethodType.squareNewCard) {
+            _squarePayload = null;
+            _squareTokenizedAtTotal = null;
+          }
+        });
+      },
+      onSavedCardSelected: (card) {
+        setState(() {
+          applySquareSavedCardSelection(
+            setPaymentMethod: (m) => _paymentMethod = m,
+            setPaymentDetailId: (id) => _selectedPaymentDetailId = id,
+            setSquareCardId: (id) => _selectedSquareCardId = id,
+            setCardDetails: (_) {},
+            setSquarePayload: (p) => _squarePayload = p,
+            setSquareTokenizedAtTotal: (t) => _squareTokenizedAtTotal = t,
+            card: card,
+          );
+        });
+      },
+    );
+  }
+
+  Widget _buildPromoCodeSection() {
+    final applied = _promoStatus == _PromoStatus.applied;
+    final loading = _promoStatus == _PromoStatus.loading;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionTitle('Promo code'),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _promoCodeController,
+                enabled: !applied,
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  labelText: 'Enter promo code',
+                  hintText: 'e.g. WELCOME10',
+                  prefixIcon: Icon(Icons.local_offer_outlined),
+                ),
+                onChanged: (value) {
+                  final upper = value.toUpperCase();
+                  if (upper != value) {
+                    _promoCodeController.value =
+                        _promoCodeController.value.copyWith(
+                      text: upper,
+                      selection: TextSelection.collapsed(offset: upper.length),
+                    );
+                  }
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              height: 56,
+              child: applied
+                  ? OutlinedButton.icon(
+                      onPressed: _handleRemovePromoCode,
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Remove'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.red,
+                        side: const BorderSide(color: Colors.red),
+                      ),
+                    )
+                  : ElevatedButton(
+                      onPressed: loading ? null : _handleApplyPromoCode,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _brandGreen,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(0, 56),
+                      ),
+                      child: loading
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('Apply'),
+                    ),
+            ),
+          ],
+        ),
+        if (_promoMessage != null) ...[
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                applied ? Icons.check_circle : Icons.error_outline,
+                size: 18,
+                color: applied ? _brandGreen : Colors.red,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  _promoMessage!,
+                  style: TextStyle(
+                    color: applied ? _brandGreen : Colors.red,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
   Widget _buildAdditionalStopSection(CatalogProvider catalog) {
     if (catalog.additionalStops.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -1252,6 +1749,13 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         .where((p) => p.pickupPreferenceId == _pickupPreferenceId)
         .firstOrNull;
 
+    // Live, not the original booking's value — reflects stops the user has
+    // just added/removed on this screen, same rule the create forms use.
+    final sideDetourSettings = context.watch<SideDetourSettingsProvider>();
+    final sideDetourFee = _sidePickDetails.isNotEmpty && sideDetourSettings.isActive
+        ? sideDetourSettings.startFee
+        : 0.0;
+
     switch (widget.booking.type) {
       case BookingType.airport:
         return PricingCalculator.airport(
@@ -1263,7 +1767,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           selectedExtras: _selectedExtras,
           additionalStop: _hasAdditionalStop ? additionalStop : null,
           pickupPreference: pickupPref,
-          sideDetourFee: widget.booking.sideDetourFee ?? 0,
+          sideDetourFee: sideDetourFee,
+          promoDiscount: _promoDiscount,
         );
       case BookingType.pointToPoint:
         return PricingCalculator.pointToPoint(
@@ -1274,7 +1779,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           extraCatalog: catalog.extraOptions,
           selectedExtras: _selectedExtras,
           additionalStop: _hasAdditionalStop ? additionalStop : null,
-          sideDetourFee: widget.booking.sideDetourFee ?? 0,
+          sideDetourFee: sideDetourFee,
+          promoDiscount: _promoDiscount,
         );
       case BookingType.hourlyCharter:
         return PricingCalculator.hourlyCharter(
@@ -1283,6 +1789,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           gratuity: gratuityModel,
           extraCatalog: catalog.extraOptions,
           selectedExtras: _selectedExtras,
+          promoDiscount: _promoDiscount,
         );
     }
   }
@@ -1394,6 +1901,17 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
               '${_isRoundTrip ? 'Round trip' : 'One way'}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          if (breakdown.promoDiscount > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Promo discount: -${_formatMoney(breakdown.promoDiscount)}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: _brandGreen,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           if (bookedTotal != null) ...[
             const SizedBox(height: 6),
             Text(
