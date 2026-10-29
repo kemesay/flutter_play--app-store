@@ -31,6 +31,10 @@ class TripCard extends StatelessWidget {
     final bookingColor = _statusColor(booking.bookingStatus, colorScheme);
     final paymentLabel = formatPaymentStatusLabel(booking.paymentStatus);
     final paymentHint = paymentStatusHint(booking.paymentStatus);
+    final renewedHint = renewedHoldHint(
+      booking.paymentStatus,
+      booking.paymentHistory.length,
+    );
 
     return Card(
       child: Padding(
@@ -189,6 +193,10 @@ class TripCard extends StatelessWidget {
                                   ),
                         ),
                       ],
+                      if (renewedHint != null) ...[
+                        const SizedBox(height: 8),
+                        _HoldRenewedBanner(text: renewedHint),
+                      ],
                       if (showDetailsButton) ...[
                         const SizedBox(height: 12),
                         SizedBox(
@@ -255,6 +263,10 @@ class TripCard extends StatelessWidget {
                                     color: colorScheme.onSurfaceVariant,
                                   ),
                         ),
+                      ],
+                      if (renewedHint != null) ...[
+                        const SizedBox(height: 8),
+                        _HoldRenewedBanner(text: renewedHint),
                       ],
                       if (showDetailsButton) ...[
                         const SizedBox(height: 12),
@@ -358,6 +370,45 @@ class _StatusChip extends StatelessWidget {
   }
 }
 
+/// Reassurance banner shown when a booking's authorization hold was renewed
+/// (or reconciled after a fare change) behind the scenes — see
+/// `renewedHoldHint`. Reuses the same brand-green tint/border/icon language
+/// as `SquarePaymentInfoBanner` on the checkout screen, so this reads as the
+/// same kind of "secure, no action needed" messaging elsewhere in the app.
+class _HoldRenewedBanner extends StatelessWidget {
+  const _HoldRenewedBanner({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    const brandGreen = Color(0xFF03930A);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: brandGreen.withOpacity(0.35)),
+        color: brandGreen.withOpacity(0.06),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_outline, size: 18, color: brandGreen),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // BookingDetailsDialog — StatefulWidget with live status polling
 // ---------------------------------------------------------------------------
@@ -439,6 +490,10 @@ class _BookingDetailsDialogState extends State<BookingDetailsDialog> {
     final theme = Theme.of(context);
     final rawData = widget.booking.rawData;
     final bookingType = widget.booking.type;
+    final renewedHint = renewedHoldHint(
+      widget.booking.paymentStatus,
+      widget.booking.paymentHistory.length,
+    );
 
     final bool showLivePanel = bookingType == BookingType.hourlyCharter &&
         (rawData['bookingStatus'] == 'EN_ROUTE' || _liveStatus != null);
@@ -516,6 +571,12 @@ class _BookingDetailsDialogState extends State<BookingDetailsDialog> {
                             'Payment Method',
                             formatPaymentMethodLabel(
                                 rawData['paymentMethod']?.toString() ?? 'N/A')),
+                        if (renewedHint != null)
+                          Padding(
+                            padding: const EdgeInsets.only(
+                                top: AppSpacing.sm, bottom: AppSpacing.sm),
+                            child: _HoldRenewedBanner(text: renewedHint),
+                          ),
                         if (rawData['tripType'] != null)
                           _buildDetailRow('Trip Type',
                               rawData['tripType']?.toString() ?? 'N/A'),

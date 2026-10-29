@@ -21,6 +21,7 @@ class TripPriceBreakdown {
     this.sideDetourFee = 0,
     this.otherAdjustments = 0,
     this.promoDiscount = 0,
+    this.walletCreditApplied = 0,
     this.distanceInMiles,
     this.isRoundTrip = false,
   });
@@ -37,6 +38,12 @@ class TripPriceBreakdown {
   final double sideDetourFee;
   final double otherAdjustments;
   final double promoDiscount;
+  // Kept as a separate field from promoDiscount (rather than folded into it)
+  // so the UI can show two distinct discount lines — "Promo discount" and
+  // "Wallet credit" — even though both are combined into one amount
+  // subtracted from the subtotal before gratuity, same as promoDiscount
+  // alone was before.
+  final double walletCreditApplied;
   final double? distanceInMiles;
   final bool isRoundTrip;
 
@@ -55,6 +62,7 @@ class PricingCalculator {
     required List<SelectedExtraOption> selectedExtras,
     AdditionalStopModel? additionalStop,
     double promoDiscount = 0,
+    double walletCreditApplied = 0,
     double sideDetourFee = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
@@ -100,16 +108,19 @@ class PricingCalculator {
           sanitizedSideDetourFee,
     );
 
-    // A promo discount reduces the ride's own cost — gratuity should be a
-    // tip on what the ride actually costs after that discount, not the
-    // pre-discount sticker price. Discount is subtracted from the subtotal
-    // BEFORE gratuity is added (mirrors the backend's chargeAmount rule,
-    // now applied before gratuity instead of after it), and gratuity itself
-    // is computed on baseFare scaled down by its proportional share of the
-    // discount — reduces to exactly baseFare when there's no discount, so
-    // an undiscounted booking's gratuity is unchanged.
-    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
-    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    // A promo discount (and/or wallet credit — the two stack additively,
+    // same as the backend's independent discount buckets) reduces the
+    // ride's own cost — gratuity should be a tip on what the ride actually
+    // costs after that discount, not the pre-discount sticker price.
+    // Discount is subtracted from the subtotal BEFORE gratuity is added
+    // (mirrors the backend's chargeAmount rule, now applied before gratuity
+    // instead of after it), and gratuity itself is computed on baseFare
+    // scaled down by its proportional share of the discount — reduces to
+    // exactly baseFare when there's no discount, so an undiscounted
+    // booking's gratuity is unchanged.
+    final combinedDiscount = promoDiscount + walletCreditApplied;
+    final discountedSubtotal = _twoDecimals(max(subtotal - combinedDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, combinedDiscount);
     final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
     final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
@@ -124,6 +135,7 @@ class PricingCalculator {
       extras: extras,
       sideDetourFee: _twoDecimals(sanitizedSideDetourFee),
       promoDiscount: _twoDecimals(promoDiscount),
+      walletCreditApplied: _twoDecimals(walletCreditApplied),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,
     );
@@ -139,6 +151,7 @@ class PricingCalculator {
     AdditionalStopModel? additionalStop,
     AirportPickupPreferenceModel? pickupPreference,
     double promoDiscount = 0,
+    double walletCreditApplied = 0,
     double sideDetourFee = 0,
   }) {
     if (car == null || distanceInMiles == null || distanceInMiles <= 0) {
@@ -188,10 +201,12 @@ class PricingCalculator {
     );
 
     // See pointToPoint() above for why discount is subtracted before
-    // gratuity is added, and why gratuity itself is computed on a
-    // discount-scaled baseFare rather than the pre-discount figure.
-    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
-    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    // gratuity is added, why gratuity itself is computed on a
+    // discount-scaled baseFare rather than the pre-discount figure, and why
+    // promoDiscount and walletCreditApplied combine additively.
+    final combinedDiscount = promoDiscount + walletCreditApplied;
+    final discountedSubtotal = _twoDecimals(max(subtotal - combinedDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, combinedDiscount);
     final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
     final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
@@ -207,6 +222,7 @@ class PricingCalculator {
       pickupPreference: _twoDecimals(pickupPreferencePrice),
       sideDetourFee: _twoDecimals(sanitizedSideDetourFee),
       promoDiscount: _twoDecimals(promoDiscount),
+      walletCreditApplied: _twoDecimals(walletCreditApplied),
       distanceInMiles: sanitizedDistance,
       isRoundTrip: isRoundTrip,
     );
@@ -219,6 +235,7 @@ class PricingCalculator {
     required List<ExtraOptionModel> extraCatalog,
     required List<SelectedExtraOption> selectedExtras,
     double promoDiscount = 0,
+    double walletCreditApplied = 0,
   }) {
     if (car == null || selectedHours == null || selectedHours <= 0) {
       return null;
@@ -239,11 +256,13 @@ class PricingCalculator {
     final subtotal = _twoDecimals(vehicleFeeTotal + extras);
 
     // See pointToPoint() above for why discount is subtracted before
-    // gratuity is added, and why gratuity itself is computed on a
-    // discount-scaled baseFare rather than the pre-discount figure.
+    // gratuity is added, why gratuity itself is computed on a
+    // discount-scaled baseFare rather than the pre-discount figure, and why
+    // promoDiscount and walletCreditApplied combine additively.
     // Gratuity applies to car fare only.
-    final discountedSubtotal = _twoDecimals(max(subtotal - promoDiscount, 0));
-    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, promoDiscount);
+    final combinedDiscount = promoDiscount + walletCreditApplied;
+    final discountedSubtotal = _twoDecimals(max(subtotal - combinedDiscount, 0));
+    final discountedBaseFare = _discountedCarFare(baseFare, subtotal, combinedDiscount);
     final gratuityAmount = _calculateGratuity(discountedBaseFare, gratuity);
     final total = _twoDecimals(discountedSubtotal + gratuityAmount);
 
@@ -257,6 +276,7 @@ class PricingCalculator {
       extras: extras,
       otherAdjustments: 0,
       promoDiscount: _twoDecimals(promoDiscount),
+      walletCreditApplied: _twoDecimals(walletCreditApplied),
       isRoundTrip: false,
     );
   }

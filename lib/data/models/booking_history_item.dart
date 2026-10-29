@@ -1,3 +1,5 @@
+import 'payment_history_entry.dart';
+
 enum BookingType {
   pointToPoint,
   airport,
@@ -21,6 +23,7 @@ class BookingHistoryItem {
     this.tripType,
     this.passengerName,
     this.carImageUrl,
+    this.paymentHistory = const <PaymentHistoryEntry>[],
     Map<String, dynamic>? rawData,
   }) : rawData = rawData ?? <String, dynamic>{};
 
@@ -43,6 +46,10 @@ class BookingHistoryItem {
   final String? tripType;
   final String? passengerName;
   final String? carImageUrl;
+  // Oldest first. >1 entry means the authorization hold behind this booking
+  // was renewed (ahead of Square's ~6-day auto-expiry) or reconciled after
+  // a fare change at least once — see PaymentHistoryEntry for detail.
+  final List<PaymentHistoryEntry> paymentHistory;
   final Map<String, dynamic> rawData;
 
   BookingHistoryItem copyWith({
@@ -65,6 +72,7 @@ class BookingHistoryItem {
       tripType: tripType,
       passengerName: passengerName,
       carImageUrl: carImageUrl,
+      paymentHistory: paymentHistory,
       rawData: {
         ...rawData,
         if (paymentStatus != null) 'paymentStatus': paymentStatus,
@@ -105,8 +113,17 @@ class BookingHistoryItem {
       tripType: json['tripType']?.toString(),
       passengerName: json['passengerFullName']?.toString(),
       carImageUrl: _resolveCarImageUrl(json),
+      paymentHistory: _parsePaymentHistory(json['paymentHistory']),
       rawData: json,
     );
+  }
+
+  static List<PaymentHistoryEntry> _parsePaymentHistory(dynamic value) {
+    if (value is! List) return const <PaymentHistoryEntry>[];
+    return value
+        .whereType<Map>()
+        .map((e) => PaymentHistoryEntry.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
   }
 
   static BookingType _detectBookingType(Map<String, dynamic> json) {

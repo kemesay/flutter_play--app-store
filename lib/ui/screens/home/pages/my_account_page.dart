@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 import '../../../../providers/auth_provider.dart';
 import '../../../../providers/booking_provider.dart';
 import '../../../../providers/payment_provider.dart';
+import '../../../../providers/wallet_provider.dart';
 import '../../../../data/models/booking_history_item.dart';
 import '../../../../data/services/promo_code_service.dart';
 import '../../../../core/exceptions/api_exception.dart';
@@ -130,6 +131,11 @@ class _MyAccountPageState extends State<MyAccountPage> {
           hourlyRides: hourlyRides,
           airportRides: airportRides,
         ),
+        const SizedBox(height: AppSpacing.lg),
+
+        // Wallet Credit Balance (accumulated referral rewards, auto-applies
+        // toward future bookings)
+        const _WalletBalanceCard(),
         const SizedBox(height: AppSpacing.lg),
 
         // Savings & Rewards Summary
@@ -748,6 +754,382 @@ class _RideStatCard extends StatelessWidget {
             textAlign: TextAlign.center,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _WalletBalanceCard extends StatefulWidget {
+  const _WalletBalanceCard();
+
+  @override
+  State<_WalletBalanceCard> createState() => _WalletBalanceCardState();
+}
+
+class _WalletBalanceCardState extends State<_WalletBalanceCard>
+    with AutomaticKeepAliveClientMixin {
+  // Without this, ListView disposes this card's State (and re-fetches from
+  // scratch) once it scrolls far enough outside the viewport's cache extent
+  // — the exact "reloads every time I scroll" symptom this fixes, same as
+  // the three cards below.
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  void initState() {
+    super.initState();
+    // Shared with the booking forms via WalletProvider (rather than a
+    // private WalletService instance like the other account cards use) so
+    // the balance shown here and the one auto-applied at checkout always
+    // agree without two independent fetches.
+    Future.microtask(() {
+      if (!mounted) return;
+      context.read<WalletProvider>().loadWallet();
+      context.read<WalletProvider>().loadCashOutRequests();
+    });
+  }
+
+  Future<void> _showCashOutDialog(
+    BuildContext context,
+    WalletProvider walletProvider,
+  ) async {
+    final amountController = TextEditingController();
+    final noteController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    String? submitError;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            final submitting = context.watch<WalletProvider>().isSubmittingCashOut;
+            return AlertDialog(
+              title: const Text('Request a Cash-Out'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "This sends a request to our team — it doesn't pay out "
+                        'automatically. Someone will reach out to arrange '
+                        'payment outside the app once it\'s reviewed.',
+                        style: Theme.of(dialogContext).textTheme.bodySmall,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Available balance: \$${walletProvider.balance.toStringAsFixed(2)}',
+                        style: Theme.of(dialogContext)
+                            .textTheme
+                            .bodyMedium
+                            ?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: amountController,
+                        enabled: !submitting,
+                        keyboardType:
+                            const TextInputType.numberWithOptions(decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Amount (\$)',
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          final amount = double.tryParse(value ?? '');
+                          if (amount == null || amount <= 0) {
+                            return 'Enter an amount greater than zero';
+                          }
+                          if (amount > walletProvider.balance) {
+                            return 'You only have \$${walletProvider.balance.toStringAsFixed(2)} available';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        controller: noteController,
+                        enabled: !submitting,
+                        maxLines: 2,
+                        decoration: const InputDecoration(
+                          labelText: 'Note (optional)',
+                          hintText: 'Anything our team should know',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (submitError != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          submitError!,
+                          style: TextStyle(
+                            color: Theme.of(dialogContext).colorScheme.error,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed:
+                      submitting ? null : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: submitting
+                      ? null
+                      : () async {
+                          if (!(formKey.currentState?.validate() ?? false)) return;
+                          final amount = double.parse(amountController.text);
+                          final result = await walletProvider.requestCashOut(
+                            amountRequested: amount,
+                            note: noteController.text,
+                          );
+                          if (result == null) {
+                            setDialogState(() {
+                              submitError = walletProvider.errorMessage ??
+                                  'Could not submit your request. Please try again.';
+                            });
+                            return;
+                          }
+                          if (dialogContext.mounted) {
+                            Navigator.of(dialogContext).pop();
+                          }
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Your request to cash out \$${amount.toStringAsFixed(2)} '
+                                  'has been sent — our team will reach out to arrange payment.',
+                                ),
+                                duration: const Duration(seconds: 5),
+                              ),
+                            );
+                          }
+                        },
+                  child: submitting
+                      ? const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Submit Request'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Color _cashOutStatusColor(BuildContext context, String status) {
+    switch (status) {
+      case 'fulfilled':
+        return Colors.green;
+      case 'cancelled':
+        return Colors.grey;
+      default:
+        return Colors.orange;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context); // required by AutomaticKeepAliveClientMixin
+    final walletProvider = context.watch<WalletProvider>();
+
+    if (walletProvider.isLoading && !walletProvider.hasLoaded) {
+      return const Card(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Center(
+            child: SizedBox(
+              height: 24,
+              width: 24,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Non-critical section — a failed/empty load should never block or
+    // blank out the rest of the account page, same philosophy as the other
+    // three cards above.
+    if (!walletProvider.hasLoaded) {
+      return const SizedBox.shrink();
+    }
+
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.account_balance_wallet_rounded,
+                    color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Text(
+                  'Wallet Credit',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.primary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Dollars earned from completed referrals — never expires, and '
+              'automatically applies toward your next booking.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '\$${walletProvider.balance.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        'Available Balance',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '\$${walletProvider.lifetimeEarned.toStringAsFixed(2)}',
+                        style: theme.textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: colorScheme.primary,
+                        ),
+                      ),
+                      Text(
+                        'Lifetime Earned',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton(
+                onPressed: walletProvider.balance > 0
+                    ? () => _showCashOutDialog(context, walletProvider)
+                    : null,
+                child: const Text('Request cash-out'),
+              ),
+            ),
+            if (walletProvider.balance <= 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  "You'll need a balance before you can request a cash-out.",
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            if (walletProvider.cashOutRequests.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              const Divider(),
+              Text(
+                'Your cash-out requests',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 140),
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: walletProvider.cashOutRequests.length,
+                  itemBuilder: (context, index) {
+                    final request = walletProvider.cashOutRequests[index];
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '\$${request.amountRequested.toStringAsFixed(2)}',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                              if (request.createdAt != null)
+                                Text(
+                                  '${request.createdAt!.month}/${request.createdAt!.day}/${request.createdAt!.year}',
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          Chip(
+                            label: Text(
+                              request.status,
+                              style: const TextStyle(fontSize: 12),
+                            ),
+                            backgroundColor: _cashOutStatusColor(
+                              context,
+                              request.status,
+                            ).withOpacity(0.15),
+                            labelStyle: TextStyle(
+                              color: _cashOutStatusColor(
+                                context,
+                                request.status,
+                              ),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

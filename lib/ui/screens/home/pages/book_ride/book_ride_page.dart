@@ -1,6 +1,7 @@
 library book_ride_page;
 
 import 'dart:async';
+import 'dart:math' show min, max;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -42,6 +43,7 @@ import 'package:oda_black_car_service/providers/auth_provider.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
 import 'package:oda_black_car_service/providers/catalog_provider.dart';
 import 'package:oda_black_car_service/providers/payment_provider.dart';
+import 'package:oda_black_car_service/providers/wallet_provider.dart';
 import 'package:oda_black_car_service/ui/theme/app_tokens.dart';
 import 'package:oda_black_car_service/ui/widgets/app_error_banner.dart';
 import 'package:oda_black_car_service/ui/widgets/custom_snackbar.dart';
@@ -3981,6 +3983,92 @@ class _PromoCodeField extends StatelessWidget {
   }
 }
 
+/// Shared wallet-credit apply/remove state across all three booking forms —
+/// mirrors _PromoStatus above. There's no "loading"/"error" state here since
+/// nothing is validated against the server before submit: the balance comes
+/// from WalletProvider and the applied amount is a pure client-side min()
+/// preview, same trust boundary as the rest of this screen (only the
+/// boolean intent is ever sent to the server).
+enum _WalletCreditStatus { idle, applied, removed }
+
+/// Shared wallet-credit control used by all three booking forms — no text
+/// entry (unlike _PromoCodeField), since the balance is fetched from
+/// WalletProvider and auto-applied by default; just a Remove/Re-apply
+/// affordance, styled to match _PromoCodeField's apply/remove button.
+class _WalletCreditField extends StatelessWidget {
+  const _WalletCreditField({
+    required this.balance,
+    required this.applied,
+    required this.status,
+    required this.onRemove,
+    required this.onReapply,
+  });
+
+  final double balance;
+  final double applied;
+  final _WalletCreditStatus status;
+  final VoidCallback onRemove;
+  final VoidCallback onReapply;
+
+  static const _brandGreen = Color(0xFF03930A);
+
+  @override
+  Widget build(BuildContext context) {
+    // Nothing to show when the customer has no wallet credit at all —
+    // mirrors the account-page cards' "fail/empty silently" philosophy.
+    if (balance <= 0) return const SizedBox.shrink();
+
+    final isApplied = status != _WalletCreditStatus.removed && applied > 0;
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _brandGreen.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.account_balance_wallet_rounded,
+              color: _brandGreen, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  isApplied
+                      ? 'Wallet credit applied: -\$${applied.toStringAsFixed(2)}'
+                      : 'Wallet credit not applied',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: _brandGreen,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Balance: \$${balance.toStringAsFixed(2)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          TextButton(
+            onPressed: isApplied ? onRemove : onReapply,
+            style: TextButton.styleFrom(
+              foregroundColor: isApplied ? Colors.red : _brandGreen,
+            ),
+            child: Text(isApplied ? 'Remove' : 'Re-apply'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TripPriceSummaryCard extends StatelessWidget {
   const _TripPriceSummaryCard({
     required this.breakdown,
@@ -4081,6 +4169,15 @@ class _TripPriceSummaryCard extends StatelessWidget {
                 label: 'Promo discount',
                 amount:
                     '-${_formatCurrency(breakdown.promoDiscount, breakdown.currency)}',
+                valueColor: const Color(0xFF03930A),
+              ),
+            ],
+            if (breakdown.walletCreditApplied > 0) ...[
+              const SizedBox(height: AppSpacing.sm),
+              _PricingRow(
+                label: 'Wallet credit',
+                amount:
+                    '-${_formatCurrency(breakdown.walletCreditApplied, breakdown.currency)}',
                 valueColor: const Color(0xFF03930A),
               ),
             ],

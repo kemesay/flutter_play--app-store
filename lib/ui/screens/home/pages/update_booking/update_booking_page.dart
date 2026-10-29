@@ -1,3 +1,5 @@
+import 'dart:math' show min, max;
+
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -28,6 +30,7 @@ import 'package:oda_black_car_service/model/place_model.dart';
 import 'package:oda_black_car_service/providers/booking_provider.dart';
 import 'package:oda_black_car_service/providers/catalog_provider.dart';
 import 'package:oda_black_car_service/providers/payment_provider.dart';
+import 'package:oda_black_car_service/providers/wallet_provider.dart';
 import 'package:oda_black_car_service/ui/screens/home/pages/book_ride/widgets/square_payment_method_section.dart';
 import 'package:oda_black_car_service/ui/theme/app_tokens.dart';
 import 'package:oda_black_car_service/ui/widgets/app_card.dart';
@@ -44,6 +47,10 @@ import 'package:uuid/uuid.dart';
 const _brandGreen = Color(0xFF03930A);
 
 enum _PromoStatus { idle, loading, applied, error }
+
+// No "loading"/"error" state — nothing is validated against the server
+// before submit, mirrors the create forms' equivalent enum.
+enum _WalletCreditStatus { idle, applied, removed }
 
 class UpdateBookingPage extends StatefulWidget {
   const UpdateBookingPage({super.key, required this.booking});
@@ -117,6 +124,15 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
   String? _appliedPromoCode;
   double _promoDiscount = 0;
   bool _promoTouched = false;
+
+  // Wallet credit — pre-filled from whatever's already applied to this
+  // booking (walletCreditAppliedInDollars), auto-re-synced to the live
+  // balance each build unless the customer explicitly removed it.
+  // `_walletCreditTouched` is the exact same "touched this session" idiom
+  // as `_promoTouched` above, just for the boolean useWalletCredit field.
+  double _walletCreditApplied = 0;
+  _WalletCreditStatus _walletCreditStatus = _WalletCreditStatus.idle;
+  bool _walletCreditTouched = false;
 
   // Payment method — like promo code, opt-in and touched-gated: the customer
   // must explicitly tap "Change payment method" before this section even
@@ -200,6 +216,14 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     _promoStatus =
         _appliedPromoCode != null ? _PromoStatus.applied : _PromoStatus.idle;
     _promoCodeController = TextEditingController(text: _appliedPromoCode ?? '');
+    // Prefilled, but never marked touched — leaving this screen without
+    // interacting with the wallet-credit control must save with
+    // useWalletCredit omitted entirely ("leave as-is"), same rule as promo
+    // code above.
+    _walletCreditApplied = _initial.walletCreditApplied;
+    _walletCreditStatus = _walletCreditApplied > 0
+        ? _WalletCreditStatus.applied
+        : _WalletCreditStatus.idle;
     _bookedTripTotalFee = widget.booking.totalFee;
     _initialGratuityPercentage = _parseGratuityPercentage(
       widget.booking.rawData['Gratuity'],
@@ -219,6 +243,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       if (!mounted) return;
       context.read<CatalogProvider>().initialize();
       context.read<PaymentProvider>().loadCards();
+      context.read<WalletProvider>().loadWallet();
       _refreshRoutePreview();
     });
   }
@@ -456,6 +481,17 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       CustomSnackbar.showSuccess(context, 'Booking updated successfully.');
       Navigator.of(context).pop(true);
     } else if (mounted && bookingProvider.errorMessage != null) {
+      // Square nonces are single-use — once this attempt sent one to our
+      // backend it's spent whether the update succeeded or not, so a stale
+      // _squarePayload left in place would let validateBookingPaymentSelection
+      // treat it as "already verified" and resubmit the same dead nonce on
+      // retry, guaranteed to fail with Square's CARD_TOKEN_USED.
+      if (_changingPayment && _paymentMethod == PaymentMethodType.squareNewCard) {
+        setState(() {
+          _squarePayload = null;
+          _squareTokenizedAtTotal = null;
+        });
+      }
       CustomSnackbar.show(context, bookingProvider.errorMessage!);
     }
   }
@@ -518,6 +554,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       specialInstructions: _instructionsController.text.trim(),
       sidePicks: _sidePicksPayload(),
       promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      useWalletCredit: _walletCreditTouched
+          ? _walletCreditStatus != _WalletCreditStatus.removed
+          : null,
       square: _paymentSquarePayload,
       squareCardId: _paymentSquareCardId,
       paymentDetailId: _paymentDetailIdForSave,
@@ -592,6 +631,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
       sidePicks: _sidePicksPayload(),
       promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      useWalletCredit: _walletCreditTouched
+          ? _walletCreditStatus != _WalletCreditStatus.removed
+          : null,
       square: _paymentSquarePayload,
       squareCardId: _paymentSquareCardId,
       paymentDetailId: _paymentDetailIdForSave,
@@ -641,6 +683,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
       gratuityId: _selectedGratuityId!,
       extraOptions: List<SelectedExtraOption>.from(_selectedExtras),
       promoCode: _promoTouched ? (_appliedPromoCode ?? '') : null,
+      useWalletCredit: _walletCreditTouched
+          ? _walletCreditStatus != _WalletCreditStatus.removed
+          : null,
       square: _paymentSquarePayload,
       squareCardId: _paymentSquareCardId,
       paymentDetailId: _paymentDetailIdForSave,
@@ -690,6 +735,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
   }
 
   Widget _buildForm(CatalogProvider catalog) {
+    _syncWalletCredit(catalog);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -716,13 +762,9 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
         _buildScheduleSection(),
         const SizedBox(height: AppSpacing.md),
         if (widget.booking.type == BookingType.airport) _buildAirlineSection(),
-        if (widget.booking.type != BookingType.hourlyCharter) ...[
-          _buildAdditionalStopSection(catalog),
-          const SizedBox(height: AppSpacing.md),
-          _buildSidePickSection(),
-          const SizedBox(height: AppSpacing.md),
-        ],
         _buildPromoCodeSection(),
+        const SizedBox(height: AppSpacing.md),
+        _buildWalletCreditSection(),
         const SizedBox(height: AppSpacing.md),
         // Hourly Charter supports extras at creation time too — this used to
         // be excluded here along with the additional-stop section above
@@ -939,6 +981,8 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           const SizedBox(height: 12),
           _buildPickupPreferenceDropdown(),
         ],
+        const SizedBox(height: AppSpacing.md),
+        _buildSidePickSection(),
       ],
     );
   }
@@ -1004,6 +1048,10 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             _refreshRoutePreview();
           },
         ),
+        if (widget.booking.type != BookingType.hourlyCharter) ...[
+          const SizedBox(height: AppSpacing.md),
+          _buildSidePickSection(),
+        ],
       ],
     );
   }
@@ -1423,6 +1471,24 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     });
   }
 
+  void _handleRemoveWalletCredit() {
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.removed;
+      _walletCreditApplied = 0;
+      _walletCreditTouched = true;
+    });
+  }
+
+  void _handleReapplyWalletCredit() {
+    // Just flips the flag back — the next build()'s _syncWalletCredit call
+    // recomputes the actual amount from the live balance and current
+    // subtotal, same as the create forms.
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.idle;
+      _walletCreditTouched = true;
+    });
+  }
+
   /// Best-effort display of whatever's currently on the booking — sourced
   /// from the raw GET response's `PaymentDetail` association (cardBrand/
   /// last4), same idea as sideDetourFee/appliedPromoCode elsewhere in this
@@ -1643,47 +1709,69 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
     );
   }
 
-  Widget _buildAdditionalStopSection(CatalogProvider catalog) {
-    if (catalog.additionalStops.isEmpty) return const SizedBox.shrink();
+  /// Mirrors _buildPromoCodeSection()'s layout, but there's no text entry —
+  /// the balance comes from WalletProvider and is auto-applied by default,
+  /// with a Remove/Re-apply affordance, same as the create forms'
+  /// _WalletCreditField.
+  Widget _buildWalletCreditSection() {
+    final walletBalance = context.watch<WalletProvider>().balance;
+    if (walletBalance <= 0) return const SizedBox.shrink();
+
+    final isApplied =
+        _walletCreditStatus != _WalletCreditStatus.removed &&
+            _walletCreditApplied > 0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionTitle('Additional stop'),
-        SwitchListTile(
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Additional stop on the way'),
-          value: _hasAdditionalStop,
-          activeColor: _brandGreen,
-          onChanged: (v) {
-            setState(() {
-              _hasAdditionalStop = v;
-              if (v && _additionalStopId == null) {
-                _additionalStopId =
-                    catalog.additionalStops.first.additionalStopId;
-              }
-            });
-          },
-        ),
-        if (_hasAdditionalStop) ...[
-          ...catalog.additionalStops.map(
-            (stop) => RadioListTile<int>(
-              title: Text(
-                '${stop.stopType} (\$${stop.additionalStopPrice.toStringAsFixed(2)})',
+        _sectionTitle('Wallet credit'),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _brandGreen.withOpacity(0.08),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.account_balance_wallet_rounded,
+                  color: _brandGreen, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isApplied
+                          ? 'Wallet credit applied: -${_formatMoney(_walletCreditApplied)}'
+                          : 'Wallet credit not applied',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        color: _brandGreen,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Balance: ${_formatMoney(walletBalance)}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              value: stop.additionalStopId,
-              groupValue: _additionalStopId,
-              contentPadding: EdgeInsets.zero,
-              onChanged: (v) => setState(() => _additionalStopId = v),
-            ),
+              TextButton(
+                onPressed:
+                    isApplied ? _handleRemoveWalletCredit : _handleReapplyWalletCredit,
+                style: TextButton.styleFrom(
+                  foregroundColor: isApplied ? Colors.red : _brandGreen,
+                ),
+                child: Text(isApplied ? 'Remove' : 'Re-apply'),
+              ),
+            ],
           ),
-          TextField(
-            controller: _additionalStopDescController,
-            maxLines: 2,
-            decoration: const InputDecoration(
-              labelText: 'Stop description',
-            ),
-          ),
-        ],
+        ),
       ],
     );
   }
@@ -1751,9 +1839,16 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
 
     // Live, not the original booking's value — reflects stops the user has
     // just added/removed on this screen, same rule the create forms use.
+    // Charged per detour stop, not once per booking — 3 stops cost 3x what
+    // 1 stop costs (matches the backend's sideDetourFeeFor). Counts only
+    // geocoded stops (whereType<PlaceDetail>, same filter _sidePicksPayload()
+    // uses), not an empty "add stop" row the user hasn't picked an address
+    // for yet.
     final sideDetourSettings = context.watch<SideDetourSettingsProvider>();
-    final sideDetourFee = _sidePickDetails.isNotEmpty && sideDetourSettings.isActive
-        ? sideDetourSettings.startFee
+    final sideDetourStopCount =
+        _sidePickDetails.whereType<PlaceDetail>().length;
+    final sideDetourFee = sideDetourSettings.isActive
+        ? sideDetourStopCount * sideDetourSettings.startFee
         : 0.0;
 
     switch (widget.booking.type) {
@@ -1769,6 +1864,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           pickupPreference: pickupPref,
           sideDetourFee: sideDetourFee,
           promoDiscount: _promoDiscount,
+          walletCreditApplied: _walletCreditApplied,
         );
       case BookingType.pointToPoint:
         return PricingCalculator.pointToPoint(
@@ -1781,6 +1877,7 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           additionalStop: _hasAdditionalStop ? additionalStop : null,
           sideDetourFee: sideDetourFee,
           promoDiscount: _promoDiscount,
+          walletCreditApplied: _walletCreditApplied,
         );
       case BookingType.hourlyCharter:
         return PricingCalculator.hourlyCharter(
@@ -1790,7 +1887,33 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
           extraCatalog: catalog.extraOptions,
           selectedExtras: _selectedExtras,
           promoDiscount: _promoDiscount,
+          walletCreditApplied: _walletCreditApplied,
         );
+    }
+  }
+
+  /// Re-syncs `_walletCreditApplied` to the live wallet balance each build —
+  /// same min(balance, subtotal-after-promo) auto-apply rule as the create
+  /// forms — unless the customer explicitly removed it this session. Must
+  /// be called once near the top of build() (see `_buildForm`), before any
+  /// `_tripBreakdown()` call that feeds the rendered UI, so every price
+  /// display this frame agrees. subtotal doesn't depend on promoDiscount or
+  /// walletCreditApplied, so reading it off a breakdown computed with the
+  /// previous (possibly stale) `_walletCreditApplied` is still correct.
+  void _syncWalletCredit(CatalogProvider catalog) {
+    final walletBalance = context.watch<WalletProvider>().balance;
+    if (_walletCreditStatus == _WalletCreditStatus.removed) {
+      _walletCreditApplied = 0;
+      return;
+    }
+    final preview = _tripBreakdown(catalog);
+    if (preview == null) return;
+    _walletCreditApplied = min(
+      walletBalance,
+      max(preview.subtotal - _promoDiscount, 0),
+    );
+    if (_walletCreditApplied > 0) {
+      _walletCreditStatus = _WalletCreditStatus.applied;
     }
   }
 
@@ -1905,6 +2028,17 @@ class _UpdateBookingPageState extends State<UpdateBookingPage> {
             const SizedBox(height: 6),
             Text(
               'Promo discount: -${_formatMoney(breakdown.promoDiscount)}',
+              style: const TextStyle(
+                fontSize: 12,
+                color: _brandGreen,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+          if (breakdown.walletCreditApplied > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Wallet credit: -${_formatMoney(breakdown.walletCreditApplied)}',
               style: const TextStyle(
                 fontSize: 12,
                 color: _brandGreen,

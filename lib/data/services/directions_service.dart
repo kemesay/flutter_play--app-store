@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:http/http.dart' as http;
@@ -42,44 +43,51 @@ class DirectionsService {
     List<LatLng> waypoints = const [],
     String mode = 'driving',
   }) async {
-    final queryParameters = <String, String>{
-      'origin': '${origin.latitude},${origin.longitude}',
-      'destination': '${destination.latitude},${destination.longitude}',
-      'travelMode': mode,
-      'mode': mode,
-      'key': Constatnts.API_KEY,
-    };
+    final firstRoute = await _fetchFirstRoute(
+      origin: origin,
+      destination: destination,
+      waypoints: waypoints,
+      mode: mode,
+    );
+    if (firstRoute == null) return null;
 
-    if (waypoints.isNotEmpty) {
-      queryParameters['waypoints'] =
-          waypoints.map((w) => '${w.latitude},${w.longitude}').join('|');
-    }
-
-    final uri = Uri.https(_endpoint, _directionsPath, queryParameters);
-    final response = await _client.get(uri);
-    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
-
-    if (response.statusCode != 200) {
-      final errorMessage =
-          decoded['error_message']?.toString() ?? 'Directions request failed';
-      throw Exception(errorMessage);
-    }
-
-    final routes = decoded['routes'] as List<dynamic>? ?? const [];
-    if (routes.isEmpty) return null;
-    final firstRoute = routes.first as Map<String, dynamic>;
     final legs = firstRoute['legs'] as List<dynamic>? ?? const [];
     if (legs.isEmpty) return null;
 
-    // Sum all legs when waypoints are present
-    double totalDistanceMeters = 0;
-    double totalDurationSeconds = 0;
-    for (final rawLeg in legs) {
-      final leg = rawLeg as Map<String, dynamic>;
-      final d = leg['distance'] as Map<String, dynamic>? ?? const {};
-      final dur = leg['duration'] as Map<String, dynamic>? ?? const {};
-      totalDistanceMeters += (d['value'] as num?)?.toDouble() ?? 0;
-      totalDurationSeconds += (dur['value'] as num?)?.toDouble() ?? 0;
+    final totals = _sumLegs(legs);
+    var totalDistanceMeters = totals.meters;
+    final totalDurationSeconds = totals.seconds;
+
+    // Google's routing engine re-optimizes each leg of a multi-stop trip
+    // independently — it does not guarantee the route through a detour stop
+    // reuses the same roads as the direct route plus a side trip. In
+    // practice this occasionally makes the WITH-DETOUR total come back
+    // shorter in raw distance than the direct route, while still taking
+    // longer (the roads it picks instead are more local/slower) — matches
+    // the same fix already shipped on the website (resolveDistanceMeters in
+    // rideDetailForm/index.jsx). Riders and admins reasonably expect adding
+    // a stop to never make a trip *shorter*, so the billed/displayed
+    // distance is floored at whatever the direct (no-waypoint) trip would
+    // have been. Duration is left exactly as Google reports it for the
+    // actual route driven — that time difference is real either way.
+    if (waypoints.isNotEmpty) {
+      try {
+        final directRoute = await _fetchFirstRoute(
+          origin: origin,
+          destination: destination,
+          waypoints: const [],
+          mode: mode,
+        );
+        final directLegs = directRoute?['legs'] as List<dynamic>? ?? const [];
+        if (directLegs.isNotEmpty) {
+          final directMeters = _sumLegs(directLegs).meters;
+          totalDistanceMeters = max(totalDistanceMeters, directMeters);
+        }
+      } catch (_) {
+        // Best-effort baseline check — a failure here (network, ZERO_RESULTS,
+        // ...) never blocks the booking flow; fall back to the with-detour
+        // total exactly as computed above.
+      }
     }
 
     final polylineData =
@@ -108,6 +116,61 @@ class DirectionsService {
       distanceText: distanceText,
       durationText: durationText,
     );
+  }
+
+  /// Raw Directions API call, parsed down to just the first route's JSON
+  /// (what both the with-waypoints call and the direct-baseline call need).
+  /// Returns null on a routeless response (e.g. ZERO_RESULTS) rather than
+  /// throwing, matching `fetchRoute`'s existing null-on-empty handling.
+  Future<Map<String, dynamic>?> _fetchFirstRoute({
+    required LatLng origin,
+    required LatLng destination,
+    required List<LatLng> waypoints,
+    required String mode,
+  }) async {
+    final queryParameters = <String, String>{
+      'origin': '${origin.latitude},${origin.longitude}',
+      'destination': '${destination.latitude},${destination.longitude}',
+      'travelMode': mode,
+      'mode': mode,
+      'key': Constatnts.API_KEY,
+    };
+
+    if (waypoints.isNotEmpty) {
+      queryParameters['waypoints'] =
+          waypoints.map((w) => '${w.latitude},${w.longitude}').join('|');
+    }
+
+    final uri = Uri.https(_endpoint, _directionsPath, queryParameters);
+    final response = await _client.get(uri);
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200) {
+      final errorMessage =
+          decoded['error_message']?.toString() ?? 'Directions request failed';
+      throw Exception(errorMessage);
+    }
+
+    final routes = decoded['routes'] as List<dynamic>? ?? const [];
+    if (routes.isEmpty) return null;
+    return routes.first as Map<String, dynamic>;
+  }
+
+  /// Sums distance (meters) and duration (seconds) across every leg of a
+  /// route — a multi-stop trip (origin -> waypoint -> ... -> destination)
+  /// comes back as one leg per hop, and the real trip total is the sum of
+  /// all of them, never just the first or last leg alone.
+  ({double meters, double seconds}) _sumLegs(List<dynamic> legs) {
+    var meters = 0.0;
+    var seconds = 0.0;
+    for (final rawLeg in legs) {
+      final leg = rawLeg as Map<String, dynamic>;
+      final d = leg['distance'] as Map<String, dynamic>? ?? const {};
+      final dur = leg['duration'] as Map<String, dynamic>? ?? const {};
+      meters += (d['value'] as num?)?.toDouble() ?? 0;
+      seconds += (dur['value'] as num?)?.toDouble() ?? 0;
+    }
+    return (meters: meters, seconds: seconds);
   }
 
   List<LatLng> _decodePolyline(String encoded) {

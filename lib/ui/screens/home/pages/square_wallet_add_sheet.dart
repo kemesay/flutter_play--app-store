@@ -148,7 +148,7 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
     };
 
     return SafeArea(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: EdgeInsets.only(
           left: 20,
           right: 20,
@@ -261,3 +261,4 @@ class _SquareWalletAddSheetState extends State<_SquareWalletAddSheet> {
     );
   }
 }
+

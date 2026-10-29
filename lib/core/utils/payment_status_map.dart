@@ -84,3 +84,18 @@ String? paymentStatusHint(String? paymentStatus) {
   }
   return null;
 }
+
+/// Reassurance copy for a booking whose authorization hold has been
+/// superseded behind the scenes — renewed ahead of Square's ~6-day
+/// auto-expiry (for a trip still several days out) or reconciled after a
+/// fare change. Both look identical from here (>1 entry in the booking's
+/// `paymentHistory`), so the copy deliberately doesn't claim which one
+/// happened. Only shown while the booking is still AUTHORIZED — once it's
+/// captured there's nothing left to reassure the customer about.
+String? renewedHoldHint(String? paymentStatus, int paymentHistoryLength) {
+  if (paymentStatus == 'AUTHORIZED' && paymentHistoryLength > 1) {
+    return 'Your card is securely held and will be charged closer to your '
+        'trip date — no action needed.';
+  }
+  return null;
+}

@@ -107,6 +107,12 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
   double _promoDiscount = 0;
   _PromoStatus _promoStatus = _PromoStatus.idle;
   String? _promoMessage;
+  // Wallet credit auto-applies by default (see build()) unless the customer
+  // explicitly removes it this session. Only meaningful for PRE_BOOKED
+  // billing, same restriction as promo codes above — LIVE billing's charge
+  // isn't known upfront, so neither discount bucket applies to it.
+  double _walletCreditApplied = 0;
+  _WalletCreditStatus _walletCreditStatus = _WalletCreditStatus.idle;
   TripPriceBreakdown? _lastPriceBreakdown;
 
   double? _routeDistanceInMiles;
@@ -135,6 +141,14 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     _passengerPhoneController =
         TextEditingController(text: user?.phoneNumber ?? '');
     _prefillPendingReferralCode();
+    // Kick off the wallet balance fetch once per form mount — matches how
+    // _MyAccountPageState kicks off PaymentProvider.loadCards(). A load
+    // already in flight/completed elsewhere (e.g. the account page) is
+    // skipped by WalletProvider itself, so this never duplicates a request.
+    Future.microtask(() {
+      if (!mounted) return;
+      context.read<WalletProvider>().loadWallet();
+    });
   }
 
   // Picks up a referral code carried through an app-store install (see
@@ -196,15 +210,44 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     final selectedCar =
         _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final selectedGratuity = _findGratuity(catalog, _selectedGratuityId);
+    final isPreBooked = _billingMode == HourlyBillingMode.preBooked;
+    final effectivePromoDiscount = isPreBooked ? _promoDiscount : 0.0;
+
+    // subtotal doesn't depend on any discount param, so a promo-only pass is
+    // enough to learn it before deciding how much wallet credit to auto-apply.
+    final walletBalance = context.watch<WalletProvider>().balance;
+    final preDiscountBreakdown = PricingCalculator.hourlyCharter(
+      car: selectedCar,
+      selectedHours: _selectedHours,
+      gratuity: selectedGratuity,
+      extraCatalog: catalog.extraOptions,
+      selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      promoDiscount: effectivePromoDiscount,
+    );
+    if (isPreBooked &&
+        _walletCreditStatus != _WalletCreditStatus.removed &&
+        preDiscountBreakdown != null) {
+      _walletCreditApplied = min(
+        walletBalance,
+        max(preDiscountBreakdown.subtotal - effectivePromoDiscount, 0),
+      );
+      if (_walletCreditApplied > 0) {
+        _walletCreditStatus = _WalletCreditStatus.applied;
+      }
+    } else {
+      // Either explicitly removed, or LIVE billing — neither discount
+      // bucket applies to LIVE, same restriction as promo codes above.
+      _walletCreditApplied = 0;
+    }
+
     final priceBreakdown = PricingCalculator.hourlyCharter(
       car: selectedCar,
       selectedHours: _selectedHours,
       gratuity: selectedGratuity,
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
-      promoDiscount: _billingMode == HourlyBillingMode.preBooked
-          ? _promoDiscount
-          : 0,
+      promoDiscount: effectivePromoDiscount,
+      walletCreditApplied: _walletCreditApplied,
     );
     _lastPriceBreakdown = priceBreakdown;
     final pricingSubtitle =
@@ -338,6 +381,10 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
                 _promoCodeController.clear();
                 _promoStatus = _PromoStatus.idle;
                 _promoMessage = null;
+                // Wallet credit has the exact same restriction as promo
+                // codes — LIVE billing's charge isn't known upfront.
+                _walletCreditApplied = 0;
+                _walletCreditStatus = _WalletCreditStatus.removed;
               }
             }),
           ),
@@ -602,6 +649,16 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
               onApply: _handleApplyPromoCode,
               onRemove: _handleRemovePromoCode,
             ),
+            if (walletBalance > 0) ...[
+              const SizedBox(height: 12),
+              _WalletCreditField(
+                balance: walletBalance,
+                applied: _walletCreditApplied,
+                status: _walletCreditStatus,
+                onRemove: _handleRemoveWalletCredit,
+                onReapply: _handleReapplyWalletCredit,
+              ),
+            ],
             const SizedBox(height: 24),
           ],
           const _ProfessionalSectionHeader(
@@ -1220,6 +1277,22 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
     });
   }
 
+  void _handleRemoveWalletCredit() {
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.removed;
+      _walletCreditApplied = 0;
+    });
+  }
+
+  void _handleReapplyWalletCredit() {
+    // Just flips the flag back — the next build() recomputes the actual
+    // amount from the live balance and current subtotal, same as how this
+    // form never stores a stale discount after other trip details change.
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.idle;
+    });
+  }
+
   Future<void> _submit(BuildContext context) async {
     if (!_formKey.currentState!.validate()) return;
     if (_pickupDetail == null || _dropoffDetail == null) {
@@ -1268,6 +1341,9 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       promoDiscount: _billingMode == HourlyBillingMode.preBooked
           ? _promoDiscount
+          : 0,
+      walletCreditApplied: _billingMode == HourlyBillingMode.preBooked
+          ? _walletCreditApplied
           : 0,
     )?.total;
 
@@ -1348,6 +1424,12 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       promoCode: _billingMode == HourlyBillingMode.preBooked
           ? _appliedPromoCode
           : null,
+      // LIVE billing never accepts wallet credit either — same restriction
+      // as promoCode above, and _walletCreditApplied is already forced to 0
+      // for LIVE in build(), so this is "removed" there regardless of status.
+      useWalletCredit: _billingMode == HourlyBillingMode.preBooked
+          ? _walletCreditStatus != _WalletCreditStatus.removed
+          : false,
       occasion: _selectedOccasion,
       specialInstructions:
           instructions.isEmpty ? null : instructions.join('\n\n'),
@@ -1385,6 +1467,17 @@ class _HourlyCharterFormState extends State<_HourlyCharterForm> {
       bookingProvider.clearMessages();
       _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {
+      // Square nonces are single-use — once this attempt sent one to our
+      // backend it's spent whether the booking succeeded or not, so a stale
+      // _squarePayload left in place would let validateBookingPaymentSelection
+      // treat the booking as "already verified" and resubmit the same dead
+      // nonce on retry, guaranteed to fail with Square's CARD_TOKEN_USED.
+      if (_paymentMethod == PaymentMethodType.squareNewCard) {
+        setState(() {
+          _squarePayload = null;
+          _squareTokenizedAtTotal = null;
+        });
+      }
       _showSnackbar(
           bookingProvider.errorMessage ?? 'Unable to submit reservation.');
     }

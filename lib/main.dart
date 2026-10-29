@@ -12,6 +12,7 @@ import 'providers/catalog_provider.dart';
 import 'providers/payment_provider.dart';
 import 'providers/social_media_provider.dart';
 import 'providers/support_provider.dart';
+import 'providers/wallet_provider.dart';
 import 'ui/screens/auth/auth_screen.dart';
 import 'ui/screens/home/home_screen.dart';
 import 'ui/screens/driver/driver_home_screen.dart';
@@ -68,6 +69,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CatalogProvider()),
         ChangeNotifierProvider(create: (_) => BookingProvider()),
         ChangeNotifierProvider(create: (_) => PaymentProvider()),
+        ChangeNotifierProvider(create: (_) => WalletProvider()),
         ChangeNotifierProvider(
             create: (_) => SocialMediaProvider()..loadSocialMedias()),
         ChangeNotifierProvider(create: (_) => SupportProvider()),

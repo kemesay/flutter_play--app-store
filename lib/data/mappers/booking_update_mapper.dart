@@ -53,6 +53,7 @@ class BookingEditFormData {
     this.sidePicks = const [],
     this.appliedPromoCode,
     this.promoDiscount = 0,
+    this.walletCreditApplied = 0,
   });
 
   final int bookingId;
@@ -105,6 +106,11 @@ class BookingEditFormData {
   // on the backend), display-only, same idea as sidePicks/sideDetourFee above.
   final String? appliedPromoCode;
   final double promoDiscount;
+  // Not its own persisted column either — sourced from the confirmed
+  // WalletCreditRedemption row(s) for this booking (walletCreditAppliedInDollars
+  // on the GET response), display-only prefill for the update form's wallet
+  // credit control, same idea as promoDiscount above.
+  final double walletCreditApplied;
 
   PlaceDetail? get airportPlaceDetail {
     if (airportLocationAddress == null ||
@@ -229,6 +235,8 @@ class BookingUpdateMapper {
       // customer would type themselves.
       appliedPromoCode: json['appliedPromoCode']?.toString().toUpperCase(),
       promoDiscount: _parseDouble(json['promoDiscountAmountInDollars']) ?? 0,
+      walletCreditApplied:
+          _parseDouble(json['walletCreditAppliedInDollars']) ?? 0,
     );
   }
 

@@ -107,6 +107,10 @@ class _PointToPointFormState extends State<_PointToPointForm> {
   double _promoDiscount = 0;
   _PromoStatus _promoStatus = _PromoStatus.idle;
   String? _promoMessage;
+  // Wallet credit auto-applies by default (see _buildPriceBreakdown) unless
+  // the customer explicitly removes it this session.
+  double _walletCreditApplied = 0;
+  _WalletCreditStatus _walletCreditStatus = _WalletCreditStatus.idle;
   TripPriceBreakdown? _lastPriceBreakdown;
   String _vehicleClassFilter = _allVehiclesLabel;
 
@@ -143,6 +147,14 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     _passengerPhoneController =
         TextEditingController(text: user?.phoneNumber ?? '');
     _prefillPendingReferralCode();
+    // Kick off the wallet balance fetch once per form mount — matches how
+    // _MyAccountPageState kicks off PaymentProvider.loadCards(). A load
+    // already in flight/completed elsewhere (e.g. the account page) is
+    // skipped by WalletProvider itself, so this never duplicates a request.
+    Future.microtask(() {
+      if (!mounted) return;
+      context.read<WalletProvider>().loadWallet();
+    });
   }
 
   // Picks up a referral code carried through an app-store install (see
@@ -446,10 +458,42 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     final selectedCar =
         _selectedCarId != null ? catalog.findCarById(_selectedCarId!) : null;
     final selectedGratuity = _findGratuity(catalog, _selectedGratuityId);
+    // Charged per detour stop, not once per booking — 3 stops cost 3x what
+    // 1 stop costs (matches the backend's sideDetourFeeFor). Counts only
+    // geocoded stops, not an empty "add stop" row with no address picked yet.
     final sideDetourSettings = context.watch<SideDetourSettingsProvider>();
-    final sideDetourFee = _sidePickDetails.isNotEmpty && sideDetourSettings.isActive
-        ? sideDetourSettings.startFee
+    final sideDetourStopCount =
+        _sidePickDetails.whereType<PlaceDetail>().length;
+    final sideDetourFee = sideDetourSettings.isActive
+        ? sideDetourStopCount * sideDetourSettings.startFee
         : 0.0;
+
+    // subtotal doesn't depend on any discount param, so a promo-only pass is
+    // enough to learn it before deciding how much wallet credit to auto-apply.
+    final walletBalance = context.watch<WalletProvider>().balance;
+    final preDiscountBreakdown = PricingCalculator.pointToPoint(
+      car: selectedCar,
+      distanceInMiles: distanceInMiles,
+      gratuity: selectedGratuity,
+      isRoundTrip: _isRoundTrip,
+      extraCatalog: catalog.extraOptions,
+      selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
+      promoDiscount: _promoDiscount,
+      sideDetourFee: sideDetourFee,
+    );
+    if (_walletCreditStatus != _WalletCreditStatus.removed &&
+        preDiscountBreakdown != null) {
+      _walletCreditApplied = min(
+        walletBalance,
+        max(preDiscountBreakdown.subtotal - _promoDiscount, 0),
+      );
+      if (_walletCreditApplied > 0) {
+        _walletCreditStatus = _WalletCreditStatus.applied;
+      }
+    } else if (_walletCreditStatus == _WalletCreditStatus.removed) {
+      _walletCreditApplied = 0;
+    }
+
     final priceBreakdown = PricingCalculator.pointToPoint(
       car: selectedCar,
       distanceInMiles: distanceInMiles,
@@ -458,6 +502,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       extraCatalog: catalog.extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       promoDiscount: _promoDiscount,
+      walletCreditApplied: _walletCreditApplied,
       sideDetourFee: sideDetourFee,
     );
     _lastPriceBreakdown = priceBreakdown;
@@ -825,6 +870,16 @@ class _PointToPointFormState extends State<_PointToPointForm> {
                 onApply: () => _handleApplyPromoCode(bookingType: 'Point to point'),
                 onRemove: _handleRemovePromoCode,
               ),
+              if (walletBalance > 0) ...[
+                const SizedBox(height: 12),
+                _WalletCreditField(
+                  balance: walletBalance,
+                  applied: _walletCreditApplied,
+                  status: _walletCreditStatus,
+                  onRemove: _handleRemoveWalletCredit,
+                  onReapply: _handleReapplyWalletCredit,
+                ),
+              ],
               const SizedBox(height: 24),
               const _ProfessionalSectionHeader(
                 title: '8. Passenger Information',
@@ -1175,6 +1230,23 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     });
   }
 
+  void _handleRemoveWalletCredit() {
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.removed;
+      _walletCreditApplied = 0;
+    });
+  }
+
+  void _handleReapplyWalletCredit() {
+    // Just flips the flag back — the next build() recomputes the actual
+    // amount from the live balance and current subtotal (see
+    // preDiscountBreakdown above), same as how this form never stores a
+    // stale discount after other trip details change.
+    setState(() {
+      _walletCreditStatus = _WalletCreditStatus.idle;
+    });
+  }
+
   Widget _sectionHeader(BuildContext context, String title) {
     return Text(
       title,
@@ -1490,12 +1562,16 @@ class _PointToPointFormState extends State<_PointToPointForm> {
     }
 
     final squareEnabled = context.read<SquareRuntimeConfig>().squareEnabled;
+    // Charged per detour stop, not once per booking — must match the preview
+    // calculation above exactly, or the submitted total disagrees with what
+    // the customer was shown.
     final sideDetourSettingsForSubmit =
         context.read<SideDetourSettingsProvider>();
-    final sideDetourFeeForSubmit =
-        _sidePickDetails.isNotEmpty && sideDetourSettingsForSubmit.isActive
-            ? sideDetourSettingsForSubmit.startFee
-            : 0.0;
+    final sideDetourStopCountForSubmit =
+        _sidePickDetails.whereType<PlaceDetail>().length;
+    final sideDetourFeeForSubmit = sideDetourSettingsForSubmit.isActive
+        ? sideDetourStopCountForSubmit * sideDetourSettingsForSubmit.startFee
+        : 0.0;
     final bookingTotal = PricingCalculator.pointToPoint(
       car: _selectedCarId != null
           ? context.read<CatalogProvider>().findCarById(_selectedCarId!)
@@ -1509,6 +1585,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       extraCatalog: context.read<CatalogProvider>().extraOptions,
       selectedExtras: List<SelectedExtraOption>.from(_selectedExtras),
       promoDiscount: _promoDiscount,
+      walletCreditApplied: _walletCreditApplied,
       sideDetourFee: sideDetourFeeForSubmit,
     )?.total;
 
@@ -1585,6 +1662,7 @@ class _PointToPointFormState extends State<_PointToPointForm> {
           : _instructionsController.text.trim(),
       bookingFor: _bookingFor,
       promoCode: _appliedPromoCode,
+      useWalletCredit: _walletCreditStatus != _WalletCreditStatus.removed,
       passengerFullName: passengerName,
       passengerEmail: passengerEmail,
       gratuityId: _selectedGratuityId!,
@@ -1634,6 +1712,17 @@ class _PointToPointFormState extends State<_PointToPointForm> {
       bookingProvider.clearMessages();
       _BookRidePageState.scrollToTopStatic();
     } else if (!success && mounted) {
+      // Square nonces are single-use — once this attempt sent one to our
+      // backend it's spent whether the booking succeeded or not, so a stale
+      // _squarePayload left in place would let validateBookingPaymentSelection
+      // treat the booking as "already verified" and resubmit the same dead
+      // nonce on retry, guaranteed to fail with Square's CARD_TOKEN_USED.
+      if (_paymentMethod == PaymentMethodType.squareNewCard) {
+        setState(() {
+          _squarePayload = null;
+          _squareTokenizedAtTotal = null;
+        });
+      }
       _showSnackbar(
           bookingProvider.errorMessage ?? 'Unable to submit booking.');
     }

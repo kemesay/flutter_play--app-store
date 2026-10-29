@@ -23,6 +23,7 @@ class HourlyCharterBookingUpdateRequest {
     required this.gratuityId,
     this.extraOptions = const <SelectedExtraOption>[],
     this.promoCode,
+    this.useWalletCredit,
     this.square,
     this.squareCardId,
     this.paymentDetailId,
@@ -51,6 +52,14 @@ class HourlyCharterBookingUpdateRequest {
   // is already applied untouched. "": customer removed it. Non-empty:
   // apply/replace. Only included in the JSON body when non-null.
   final String? promoCode;
+  // Null: customer never touched the wallet-credit control this session,
+  // leave whatever is already applied untouched (the backend checks whether
+  // this JSON key is present at all, not just its truthiness). true:
+  // (re)apply wallet credit. false: remove it from this booking. Only
+  // included in the JSON body when non-null — exact same tri-state
+  // "touched" idiom as promoCode above, just boolean rather than a code
+  // string since the server (never the client) computes the dollar amount.
+  final bool? useWalletCredit;
   // Payment method — all three null unless the customer explicitly opened
   // "Change payment method" this session (see update_booking_page.dart).
   // `square` (a fresh Square nonce) means "charge a new card"; `squareCardId`
@@ -94,6 +103,9 @@ class HourlyCharterBookingUpdateRequest {
       // depth (matches the create-request models' own model-level safety
       // net for this same field).
       data['promoCode'] = promoCode!.toUpperCase();
+    }
+    if (useWalletCredit != null) {
+      data['useWalletCredit'] = useWalletCredit;
     }
     if (square != null) {
       data['square'] = square!.toJson();

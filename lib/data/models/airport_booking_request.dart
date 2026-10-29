@@ -38,6 +38,7 @@ class AirportBookingRequest {
     this.squareCardId,
     this.specialInstructions,
     this.sidePicks = const <Map<String, dynamic>>[],
+    this.useWalletCredit,
   });
 
   final String tripType;
@@ -73,6 +74,12 @@ class AirportBookingRequest {
   final String? squareCardId;
   final String? specialInstructions;
   final List<Map<String, dynamic>> sidePicks;
+  // Server defaults to true (auto-apply wallet credit) when this key is
+  // omitted entirely — only sent as an explicit false when the customer
+  // removed wallet credit this session, same "only the boolean intent, the
+  // server computes the dollar amount" trust boundary as promoCode's string
+  // vs. server-computed discount.
+  final bool? useWalletCredit;
 
   Map<String, dynamic> toJson() {
     final data = <String, dynamic>{
@@ -144,6 +151,9 @@ class AirportBookingRequest {
     }
     if (specialInstructions != null && specialInstructions!.isNotEmpty) {
       data['specialInstructions'] = specialInstructions;
+    }
+    if (useWalletCredit == false) {
+      data['useWalletCredit'] = false;
     }
 
     return data;
